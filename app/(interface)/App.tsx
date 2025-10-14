@@ -8,7 +8,7 @@ import { TextBox } from "./components/TextBox";
 import { TextToolbar } from "./components/TextToolbar";
 import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
-import { BubbleSizeMap } from "./components/maps-layout";
+import { BubbleSizeMap, OrbitalMap } from "./components/maps-layout";
 import { BoxType } from "@/lib/mapTypes";
 import { FolderItem } from "./components/right-sidebar/data";
 
@@ -656,6 +656,8 @@ export default function App() {
 
           {selectedLayout === 'bubble-size' ? (
             <BubbleSizeMap folders={folderData} />
+          ) : selectedLayout === 'orbital' ? (
+            <OrbitalMap folders={folderData} />
           ) : (
             <>
               {/* Cloud Service Icons - Fixed size */}
