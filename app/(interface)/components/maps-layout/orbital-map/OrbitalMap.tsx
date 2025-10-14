@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { select, type Selection } from 'd3-selection';
 import {
+  D3ZoomEvent,
+  Selection,
   forceCenter,
   forceCollide,
   forceLink,
   forceManyBody,
-  forceRadial,
   forceSimulation,
+  forceX,
+  forceY,
+  select,
+  zoom,
   type SimulationLinkDatum,
-} from 'd3-force';
-import { scaleSqrt } from 'd3-scale';
+  type ZoomBehavior,
+} from 'd3';
 
 import type { FolderItem } from '../../right-sidebar/data';
 import {
@@ -19,28 +23,26 @@ import {
   type BubbleTreeNode,
 } from '@/lib/mapData';
 import { enableNodeDrag, handleNodeDoubleClick } from '@/app/(interface)/lib/mapUtils/interactions';
+import {
+  getPaletteColor,
+  getReadableTextColor,
+  shiftColor,
+} from '@/app/(interface)/lib/utils/colors';
 
-const ORBITAL_BASE_RADIUS = 80;
-const ORBITAL_RADIUS_STEP = 120;
-const NODE_MIN_RADIUS = 18;
-const NODE_MAX_RADIUS = 52;
-
-const colorPalette = [
-  ['#60a5fa', '#2563eb'],
-  ['#34d399', '#0f766e'],
-  ['#fbbf24', '#d97706'],
-  ['#f472b6', '#c026d3'],
-  ['#a78bfa', '#6d28d9'],
-  ['#f97316', '#b45309'],
-];
+const ORBITAL_BASE_RADIUS = 140;
+const ORBITAL_RADIUS_STEP = 160;
+const NODE_RADIUS_BY_DEPTH = [60, 42, 30, 24, 20];
+const ZOOM_EXTENT: [number, number] = [0.35, 2.4];
 
 interface OrbitalMapProps {
   folders: FolderItem[];
+  colorPaletteId?: string;
 }
 
 interface OrbitalSimulationNode extends BubbleTreeNode {
   orbitRadius: number;
   radius: number;
+  parentId: string | null;
   x?: number;
   y?: number;
   vx?: number;
@@ -54,6 +56,12 @@ type OrbitalLink = SimulationLinkDatum<OrbitalSimulationNode> & {
   target: string | OrbitalSimulationNode;
 };
 
+const getOrbitRadiusForDepth = (depth: number) =>
+  depth === 0 ? 0 : ORBITAL_BASE_RADIUS + (depth - 1) * ORBITAL_RADIUS_STEP;
+
+const getNodeRadiusForDepth = (depth: number) =>
+  NODE_RADIUS_BY_DEPTH[Math.min(depth, NODE_RADIUS_BY_DEPTH.length - 1)];
+
 const computeVisibleGraph = (
   rootNode: BubbleTreeNode | null,
   expandedNodes: Set<string>,
@@ -66,11 +74,12 @@ const computeVisibleGraph = (
   const links: OrbitalLink[] = [];
 
   const traverse = (node: BubbleTreeNode, depth: number, parent: BubbleTreeNode | null) => {
-    const orbitRadius = ORBITAL_BASE_RADIUS + depth * ORBITAL_RADIUS_STEP;
+    const orbitRadius = getOrbitRadiusForDepth(depth);
     const simulationNode: OrbitalSimulationNode = {
       ...node,
       orbitRadius,
-      radius: NODE_MIN_RADIUS,
+      radius: getNodeRadiusForDepth(depth),
+      parentId: parent?.id ?? null,
     };
 
     nodes.push(simulationNode);
@@ -96,7 +105,7 @@ const findRootNode = (tree: BubbleTree): BubbleTreeNode | null => {
     return null;
   }
 
-  const sorted = [...tree.roots].sort((first, second) => {
+  const [root] = [...tree.roots].sort((first, second) => {
     if (first.depth !== second.depth) {
       return first.depth - second.depth;
     }
@@ -104,7 +113,7 @@ const findRootNode = (tree: BubbleTree): BubbleTreeNode | null => {
     return second.size - first.size;
   });
 
-  return sorted[0];
+  return root;
 };
 
 const resolveCoordinate = (
@@ -120,9 +129,62 @@ const resolveCoordinate = (
   return nodeLookup.get(value)?.[axis] ?? fallback;
 };
 
-export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
+const createOrbitForce = (
+  nodeLookup: Map<string, OrbitalSimulationNode>,
+  getRadius: (node: OrbitalSimulationNode) => number,
+) => {
+  const strength = 0.18;
+
+  const force = (alpha: number) => {
+    nodeLookup.forEach(node => {
+      if (!node.parentId) {
+        return;
+      }
+
+      const parent = nodeLookup.get(node.parentId);
+      if (!parent) {
+        return;
+      }
+
+      const parentX = parent.x ?? 0;
+      const parentY = parent.y ?? 0;
+      const nodeX = node.x ?? parentX;
+      const nodeY = node.y ?? parentY;
+      let dx = nodeX - parentX;
+      let dy = nodeY - parentY;
+
+      let distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance === 0) {
+        const angle = Math.random() * Math.PI * 2;
+        dx = Math.cos(angle);
+        dy = Math.sin(angle);
+        distance = 1;
+      }
+
+      const target = getRadius(node);
+      if (!target) {
+        return;
+      }
+
+      const delta = distance - target;
+      const adjustment = (delta / distance) * strength * alpha;
+
+      node.vx = (node.vx ?? 0) - dx * adjustment;
+      node.vy = (node.vy ?? 0) - dy * adjustment;
+    });
+  };
+
+  force.initialize = () => {};
+
+  return force;
+};
+
+export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const zoomGroupRef = useRef<SVGGElement | null>(null);
+  const orbitRingGroupRef = useRef<SVGGElement | null>(null);
   const linkGroupRef = useRef<SVGGElement | null>(null);
   const nodeGroupRef = useRef<SVGGElement | null>(null);
 
@@ -160,16 +222,64 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const svgElement = svgRef.current;
+    const zoomGroupElement = zoomGroupRef.current;
+
+    if (!svgElement || !zoomGroupElement) {
+      return;
+    }
+
+    const svgSelection = select(svgElement);
+    const zoomGroupSelection = select(zoomGroupElement);
+
+    const zoomBehaviour: ZoomBehavior<SVGSVGElement, unknown> = zoom<SVGSVGElement, unknown>()
+      .scaleExtent(ZOOM_EXTENT)
+      .translateExtent([
+        [-Infinity, -Infinity],
+        [Infinity, Infinity],
+      ])
+      .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
+        zoomGroupSelection.attr('transform', event.transform.toString());
+      });
+
+    svgSelection.call(zoomBehaviour as any);
+    svgSelection.on('dblclick.zoom', null);
+
+    return () => {
+      svgSelection.on('.zoom', null);
+    };
+  }, []);
+
   const bubbleNodes = useMemo(() => buildBubbleNodes(folders), [folders]);
   const bubbleTree = useMemo(() => buildBubbleTree(bubbleNodes), [bubbleNodes]);
   const rootNode = useMemo(() => findRootNode(bubbleTree), [bubbleTree]);
-  const allNodeIds = useMemo(() => Array.from(bubbleTree.nodeMap.keys()), [bubbleTree]);
 
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(allNodeIds));
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    setExpandedNodes(new Set(allNodeIds));
-  }, [allNodeIds]);
+    if (!rootNode) {
+      setExpandedNodes(new Set());
+      return;
+    }
+
+    setExpandedNodes(previous => {
+      const next = new Set(previous);
+      const validIds = new Set(bubbleTree.nodeMap.keys());
+
+      next.forEach(id => {
+        if (!validIds.has(id)) {
+          next.delete(id);
+        }
+      });
+
+      if (!next.has(rootNode.id) || next.size === 0) {
+        return new Set([rootNode.id]);
+      }
+
+      return next;
+    });
+  }, [rootNode, bubbleTree]);
 
   const { nodes: visibleNodes, links: visibleLinks } = useMemo(
     () => computeVisibleGraph(rootNode, expandedNodes),
@@ -178,10 +288,11 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
 
   useEffect(() => {
     const svgElement = svgRef.current;
-    const nodeGroupElement = nodeGroupRef.current;
+    const orbitRingGroupElement = orbitRingGroupRef.current;
     const linkGroupElement = linkGroupRef.current;
+    const nodeGroupElement = nodeGroupRef.current;
 
-    if (!svgElement || !nodeGroupElement || !linkGroupElement) {
+    if (!svgElement || !orbitRingGroupElement || !linkGroupElement || !nodeGroupElement) {
       return;
     }
 
@@ -199,34 +310,34 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
       .attr('width', width)
       .attr('height', height)
       .attr('viewBox', `0 0 ${width} ${height}`)
-      .attr('preserveAspectRatio', 'xMidYMid meet');
+      .attr('preserveAspectRatio', 'xMidYMid meet')
+      .style('overflow', 'visible');
 
-    const nodeGroup = select(nodeGroupElement);
+    const orbitRingGroup = select(orbitRingGroupElement);
     const linkGroup = select(linkGroupElement);
+    const nodeGroup = select(nodeGroupElement);
 
     if (nodesData.length === 0) {
-      nodeGroup.selectAll('*').remove();
+      orbitRingGroup.selectAll('*').remove();
       linkGroup.selectAll('*').remove();
+      nodeGroup.selectAll('*').remove();
       return;
     }
 
-    const sizeValues = nodesData.map(node => node.size).filter(size => size > 0);
-    const minSize = sizeValues.length ? Math.min(...sizeValues) : 1;
-    const maxSize = sizeValues.length ? Math.max(...sizeValues) : minSize;
-    const radiusScale = scaleSqrt<number, number>()
-      .domain([minSize, maxSize])
-      .range([NODE_MIN_RADIUS, NODE_MAX_RADIUS]);
-
-    nodesData.forEach(node => {
-      node.radius = node.size > 0 ? radiusScale(node.size) : NODE_MIN_RADIUS;
-    });
-
-    if (nodesData.length) {
-      nodesData[0].x = width / 2;
-      nodesData[0].y = height / 2;
-    }
-
     const nodeLookup = new Map(nodesData.map(node => [node.id, node] as const));
+
+    const getParentCoordinate = (
+      node: OrbitalSimulationNode,
+      axis: 'x' | 'y',
+      fallback: number,
+    ) => {
+      if (!node.parentId) {
+        return fallback;
+      }
+
+      const parent = nodeLookup.get(node.parentId);
+      return parent?.[axis] ?? fallback;
+    };
 
     const simulation = forceSimulation<OrbitalSimulationNode>(nodesData)
       .force(
@@ -236,21 +347,57 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
           .distance(link => {
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const target = nodeLookup.get(targetId);
-            const depth = target?.depth ?? 0;
-            return ORBITAL_BASE_RADIUS + depth * (ORBITAL_RADIUS_STEP * 0.6);
+            return target ? target.orbitRadius || ORBITAL_BASE_RADIUS : ORBITAL_BASE_RADIUS;
           })
-          .strength(0.7),
+          .strength(0.85),
       )
-      .force('charge', forceManyBody().strength(-220))
+      .force('charge', forceManyBody().strength(-260))
       .force('center', forceCenter(width / 2, height / 2))
       .force(
-        'radial',
-        forceRadial<OrbitalSimulationNode>(node => node.orbitRadius, width / 2, height / 2).strength(0.95),
+        'x',
+        forceX<OrbitalSimulationNode>(node => getParentCoordinate(node, 'x', width / 2)).strength(node =>
+          node.parentId ? 0.08 : 0.2,
+        ),
       )
-      .force('collision', forceCollide<OrbitalSimulationNode>().radius(node => node.radius + 10).strength(0.9))
-      .velocityDecay(0.35);
+      .force(
+        'y',
+        forceY<OrbitalSimulationNode>(node => getParentCoordinate(node, 'y', height / 2)).strength(node =>
+          node.parentId ? 0.08 : 0.2,
+        ),
+      )
+      .force('collision', forceCollide<OrbitalSimulationNode>().radius(node => node.radius + 12).strength(0.95))
+      .force('orbit', createOrbitForce(nodeLookup, node => node.orbitRadius))
+      .velocityDecay(0.3);
 
-    simulation.alpha(1).alphaDecay(0.06);
+    if (nodesData.length) {
+      nodesData[0].x = width / 2;
+      nodesData[0].y = height / 2;
+      nodesData[0].fx = width / 2;
+      nodesData[0].fy = height / 2;
+    }
+
+    simulation.alpha(1).alphaDecay(0.055);
+
+    const ringData = nodesData.filter(node => node.children?.length && expandedNodes.has(node.id));
+
+    const ringSelection = orbitRingGroup
+      .selectAll<SVGCircleElement, OrbitalSimulationNode>('circle.orbit-ring')
+      .data(ringData, node => node.id);
+
+    ringSelection.exit().remove();
+
+    const ringEnter = ringSelection
+      .enter()
+      .append('circle')
+      .attr('class', 'orbit-ring')
+      .attr('fill', 'none')
+      .attr('stroke', 'rgba(148, 163, 184, 0.2)')
+      .attr('stroke-width', 1.25)
+      .attr('stroke-dasharray', '2 6');
+
+    const mergedRings = ringEnter.merge(
+      ringSelection as Selection<SVGCircleElement, OrbitalSimulationNode, SVGGElement, unknown>,
+    );
 
     const linkKey = (link: OrbitalLink) => {
       const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
@@ -268,11 +415,13 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
       .enter()
       .append('line')
       .attr('class', 'orbital-link')
-      .attr('stroke', 'rgba(148, 163, 184, 0.55)')
-      .attr('stroke-width', 1.4)
+      .attr('stroke', 'rgba(148, 163, 184, 0.3)')
+      .attr('stroke-width', 1.2)
       .attr('stroke-linecap', 'round');
 
-    const mergedLinks = linkEnter.merge(linkSelection as Selection<SVGLineElement, OrbitalLink, SVGGElement, unknown>);
+    const mergedLinks = linkEnter.merge(
+      linkSelection as Selection<SVGLineElement, OrbitalLink, SVGGElement, unknown>,
+    );
 
     const nodeSelection = nodeGroup
       .selectAll<SVGGElement, OrbitalSimulationNode>('g.orbital-node')
@@ -283,36 +432,28 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
     const nodeEnter = nodeSelection
       .enter()
       .append('g')
-      .attr('class', 'orbital-node cursor-pointer');
+      .attr('class', 'orbital-node cursor-pointer select-none');
 
     nodeEnter
       .append('circle')
       .attr('stroke-width', 2)
-      .attr('fill-opacity', 0.92)
-      .attr('stroke-opacity', 0.9);
+      .attr('fill-opacity', 0.95);
 
     nodeEnter
       .append('text')
       .attr('text-anchor', 'middle')
       .attr('font-size', 12)
-      .attr('font-weight', 500)
-      .attr('fill', '#e2e8f0')
-      .attr('opacity', 0.95);
+      .attr('font-weight', 600)
+      .attr('dy', '0.35em')
+      .style('pointer-events', 'none');
 
-    const mergedNodes = nodeEnter.merge(nodeSelection as Selection<SVGGElement, OrbitalSimulationNode, SVGGElement, unknown>);
+    const mergedNodes = nodeEnter.merge(
+      nodeSelection as Selection<SVGGElement, OrbitalSimulationNode, SVGGElement, unknown>,
+    );
 
-    mergedNodes.select('circle').each(function (node) {
-      const palette = colorPalette[node.depth % colorPalette.length];
-      select(this)
-        .attr('r', node.radius)
-        .attr('fill', palette[0])
-        .attr('stroke', palette[1]);
-    });
+    mergedNodes.select('circle').attr('r', node => node.radius);
 
-    mergedNodes
-      .select('text')
-      .text(node => node.name)
-      .attr('dy', node => node.radius + 16);
+    mergedNodes.select('text').text(node => node.name);
 
     mergedNodes.on('dblclick', (event, node) => {
       event.preventDefault();
@@ -325,21 +466,42 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
     simulation.on('tick', () => {
       mergedNodes.attr('transform', node => `translate(${node.x ?? width / 2}, ${node.y ?? height / 2})`);
 
-      mergedNodes
-        .select('text')
-        .attr('dy', node => node.radius + 16);
-
       mergedLinks
         .attr('x1', link => resolveCoordinate(link.source, 'x', width / 2, nodeLookup))
         .attr('y1', link => resolveCoordinate(link.source, 'y', height / 2, nodeLookup))
         .attr('x2', link => resolveCoordinate(link.target, 'x', width / 2, nodeLookup))
         .attr('y2', link => resolveCoordinate(link.target, 'y', height / 2, nodeLookup));
+
+      mergedRings
+        .attr('cx', node => node.x ?? width / 2)
+        .attr('cy', node => node.y ?? height / 2)
+        .attr('r', node => getOrbitRadiusForDepth(node.depth + 1));
     });
 
     return () => {
       simulation.stop();
     };
-  }, [visibleNodes, visibleLinks, dimensions, setExpandedNodes]);
+  }, [visibleNodes, visibleLinks, dimensions]);
+
+  useEffect(() => {
+    const nodeGroupElement = nodeGroupRef.current;
+    if (!nodeGroupElement) {
+      return;
+    }
+
+    const nodeSelection = select(nodeGroupElement)
+      .selectAll<SVGGElement, OrbitalSimulationNode>('g.orbital-node');
+
+    nodeSelection.select('circle').each(function (node) {
+      const baseColor = getPaletteColor(colorPaletteId, node.depth);
+      const strokeColor = shiftColor(baseColor, -0.2);
+      select(this).attr('fill', baseColor).attr('stroke', strokeColor);
+    });
+
+    nodeSelection
+      .select('text')
+      .attr('fill', node => getReadableTextColor(getPaletteColor(colorPaletteId, node.depth)));
+  }, [colorPaletteId, visibleNodes]);
 
   if (!rootNode) {
     return (
@@ -352,8 +514,11 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
   return (
     <div ref={containerRef} className="w-full h-full">
       <svg ref={svgRef} className="w-full h-full">
-        <g ref={linkGroupRef} />
-        <g ref={nodeGroupRef} />
+        <g ref={zoomGroupRef}>
+          <g ref={orbitRingGroupRef} />
+          <g ref={linkGroupRef} />
+          <g ref={nodeGroupRef} />
+        </g>
       </svg>
     </div>
   );
