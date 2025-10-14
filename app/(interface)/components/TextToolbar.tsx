@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Palette, ChevronDown, Underline, Link, Square, Circle,
   X, Trash2, StickyNote, Edit, MessageCircle, Zap, Lock, Unlock
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { TextFormat } from './TextFormatDialog';
 import { Separator } from './ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -46,6 +47,14 @@ const boxTypeOptions = [
   { name: 'Parallelogram', value: 'parallelogram' as const, icon: Zap },
 ];
 
+type EmphasisToggleKey = 'isBold' | 'isItalic' | 'isUnderline';
+
+const emphasisToggles: Array<[EmphasisToggleKey, LucideIcon]> = [
+  ['isBold', Bold],
+  ['isItalic', Italic],
+  ['isUnderline', Underline],
+];
+
 export function TextToolbar({ x, y, format, onFormatChange, onDelete, zoom }: TextToolbarProps) {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState(format.link || '');
@@ -84,7 +93,14 @@ export function TextToolbar({ x, y, format, onFormatChange, onDelete, zoom }: Te
   const dropdownBase = `absolute z-50 toolbar-dropdown border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg 
                         bg-white dark:bg-neutral-900`;
 
-  const ColorPicker = ({ colors, selectedColor, onColorSelect, includeTransparent = false }: any) => {
+  interface ColorPickerProps {
+    colors: string[];
+    selectedColor: string;
+    onColorSelect: (color: string) => void;
+    includeTransparent?: boolean;
+  }
+
+  const ColorPicker = ({ colors, selectedColor, onColorSelect, includeTransparent = false }: ColorPickerProps) => {
     const pos = isInLowerQuadrant()
       ? 'absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2'
       : 'absolute top-full mt-2 left-1/2 transform -translate-x-1/2';
@@ -188,17 +204,20 @@ export function TextToolbar({ x, y, format, onFormatChange, onDelete, zoom }: Te
         <Separator orientation="vertical" className="h-5" />
 
         {/* --- Bold/Italic/Underline --- */}
-        {[['isBold', Bold], ['isItalic', Italic], ['isUnderline', Underline]].map(([key, Icon]) => (
-          <button
-            key={key}
-            className={`h-7 w-7 flex items-center justify-center rounded ${
-              (format as any)[key] ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'
-            }`}
-            onClick={() => onFormatChange({ ...format, [key]: !(format as any)[key] })}
-          >
-            <Icon size={14} />
-          </button>
-        ))}
+        {emphasisToggles.map(([key, Icon]) => {
+          const isActive = format[key] ?? false;
+          return (
+            <button
+              key={key}
+              className={`h-7 w-7 flex items-center justify-center rounded ${
+                isActive ? 'bg-accent text-accent-foreground' : 'hover:bg-accent'
+              }`}
+              onClick={() => onFormatChange({ ...format, [key]: !isActive })}
+            >
+              <Icon size={14} />
+            </button>
+          );
+        })}
 
         <Separator orientation="vertical" className="h-5" />
 
@@ -243,7 +262,14 @@ export function TextToolbar({ x, y, format, onFormatChange, onDelete, zoom }: Te
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-1 rounded-sm" style={{ backgroundColor: format.textColor }} />
           </div>
           {activeDropdown === 'textColor' && (
-            <ColorPicker colors={textColorOptions} selectedColor={format.textColor} onColorSelect={c => { onFormatChange({ ...format, textColor: c }); setActiveDropdown(null); }} />
+            <ColorPicker
+              colors={textColorOptions}
+              selectedColor={format.textColor}
+              onColorSelect={(color: string) => {
+                onFormatChange({ ...format, textColor: color });
+                setActiveDropdown(null);
+              }}
+            />
           )}
         </div>
 
@@ -258,7 +284,15 @@ export function TextToolbar({ x, y, format, onFormatChange, onDelete, zoom }: Te
               style={{ backgroundColor: format.backgroundColor === 'transparent' ? '#ffffff' : format.backgroundColor }} />
           </div>
           {activeDropdown === 'backgroundColor' && (
-            <ColorPicker colors={backgroundColorOptions} selectedColor={format.backgroundColor} onColorSelect={c => { onFormatChange({ ...format, backgroundColor: c }); setActiveDropdown(null); }} includeTransparent />
+            <ColorPicker
+              colors={backgroundColorOptions}
+              selectedColor={format.backgroundColor}
+              onColorSelect={(color: string) => {
+                onFormatChange({ ...format, backgroundColor: color });
+                setActiveDropdown(null);
+              }}
+              includeTransparent
+            />
           )}
         </div>
 
