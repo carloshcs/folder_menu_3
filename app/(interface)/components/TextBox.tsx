@@ -770,23 +770,6 @@ export function TextBox({
         )}
       </div>
 
-      {/* Dialogue Box Tail */}
-      {format.boxType === 'dialogue' && (
-        <div 
-          className="absolute"
-          style={{
-            bottom: '-8px',
-            left: '20px',
-            width: '0',
-            height: '0',
-            borderLeft: '8px solid transparent',
-            borderRight: '8px solid transparent',
-            borderTop: `8px solid ${format.backgroundColor === 'transparent' ? '#ffffff' : format.backgroundColor}`,
-            filter: 'drop-shadow(0 2px 1px rgba(0,0,0,0.1))'
-          }}
-        />
-      )}
-
       {/* Resize Handles - positioned outside the box to avoid thickness conflicts */}
       {isSelected && !format.isLocked && (
         <>

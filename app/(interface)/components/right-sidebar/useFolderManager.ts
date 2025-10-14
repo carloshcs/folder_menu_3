@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   FolderItem,
@@ -6,6 +6,7 @@ import {
   SERVICE_ORDER,
   createInitialFolders,
   getBaseFolders,
+  loadGoogleDriveTree,
   isServiceId
 } from './data';
 
@@ -148,7 +149,50 @@ const findParentOfFolder = (
 export const useFolderManager = () => {
   const [folders, setFolders] = useState<FolderItem[]>(() => createInitialFolders());
   const [suppressedFolders, setSuppressedFolders] = useState<SuppressedFolder[]>([]);
-  const baseFolders = getBaseFolders();
+  const [baseFolders, setBaseFolders] = useState<FolderItem[]>(() => getBaseFolders());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadGoogleDriveTree()
+      .then(tree => {
+        if (cancelled) {
+          return;
+        }
+
+        setFolders(prev => {
+          let shouldUpdate = false;
+
+          const updated = prev.map(item => {
+            if (item.id !== 'googledrive') {
+              return item;
+            }
+
+            if (item.children && item.children.length > 0) {
+              return item;
+            }
+
+            shouldUpdate = true;
+
+            return {
+              ...item,
+              children: tree,
+            };
+          });
+
+          return shouldUpdate ? updated : prev;
+        });
+
+        setBaseFolders(getBaseFolders());
+      })
+      .catch(error => {
+        console.error('Failed to load Google Drive tree', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleFolder = useCallback((folderId: string) => {
     const toggleRecursive = (items: FolderItem[]): FolderItem[] => {
