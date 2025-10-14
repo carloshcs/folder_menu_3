@@ -7,8 +7,6 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
-  forceX,
-  forceY,
   select,
   zoom,
   type SimulationLinkDatum,
@@ -79,7 +77,6 @@ const computeVisibleGraph = (
       ...node,
       orbitRadius,
       radius: getNodeRadiusForDepth(depth),
-      parentId: parent?.id ?? null,
     };
 
     nodes.push(simulationNode);
@@ -127,57 +124,6 @@ const resolveCoordinate = (
   }
 
   return nodeLookup.get(value)?.[axis] ?? fallback;
-};
-
-const createOrbitForce = (
-  nodeLookup: Map<string, OrbitalSimulationNode>,
-  getRadius: (node: OrbitalSimulationNode) => number,
-) => {
-  const strength = 0.18;
-
-  const force = (alpha: number) => {
-    nodeLookup.forEach(node => {
-      if (!node.parentId) {
-        return;
-      }
-
-      const parent = nodeLookup.get(node.parentId);
-      if (!parent) {
-        return;
-      }
-
-      const parentX = parent.x ?? 0;
-      const parentY = parent.y ?? 0;
-      const nodeX = node.x ?? parentX;
-      const nodeY = node.y ?? parentY;
-      let dx = nodeX - parentX;
-      let dy = nodeY - parentY;
-
-      let distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance === 0) {
-        const angle = Math.random() * Math.PI * 2;
-        dx = Math.cos(angle);
-        dy = Math.sin(angle);
-        distance = 1;
-      }
-
-      const target = getRadius(node);
-      if (!target) {
-        return;
-      }
-
-      const delta = distance - target;
-      const adjustment = (delta / distance) * strength * alpha;
-
-      node.vx = (node.vx ?? 0) - dx * adjustment;
-      node.vy = (node.vy ?? 0) - dy * adjustment;
-    });
-  };
-
-  force.initialize = () => {};
-
-  return force;
 };
 
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
@@ -235,10 +181,6 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     const zoomBehaviour: ZoomBehavior<SVGSVGElement, unknown> = zoom<SVGSVGElement, unknown>()
       .scaleExtent(ZOOM_EXTENT)
-      .translateExtent([
-        [-Infinity, -Infinity],
-        [Infinity, Infinity],
-      ])
       .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
         zoomGroupSelection.attr('transform', event.transform.toString());
       });
@@ -326,19 +268,6 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     const nodeLookup = new Map(nodesData.map(node => [node.id, node] as const));
 
-    const getParentCoordinate = (
-      node: OrbitalSimulationNode,
-      axis: 'x' | 'y',
-      fallback: number,
-    ) => {
-      if (!node.parentId) {
-        return fallback;
-      }
-
-      const parent = nodeLookup.get(node.parentId);
-      return parent?.[axis] ?? fallback;
-    };
-
     const simulation = forceSimulation<OrbitalSimulationNode>(nodesData)
       .force(
         'link',
@@ -347,33 +276,24 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
           .distance(link => {
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const target = nodeLookup.get(targetId);
-            return target ? target.orbitRadius || ORBITAL_BASE_RADIUS : ORBITAL_BASE_RADIUS;
+            const depth = target?.depth ?? 1;
+            const orbitRadius = getOrbitRadiusForDepth(depth);
+            return orbitRadius || ORBITAL_BASE_RADIUS;
           })
-          .strength(0.85),
+          .strength(0.8),
       )
-      .force('charge', forceManyBody().strength(-260))
+      .force('charge', forceManyBody().strength(-280))
       .force('center', forceCenter(width / 2, height / 2))
       .force(
-        'x',
-        forceX<OrbitalSimulationNode>(node => getParentCoordinate(node, 'x', width / 2)).strength(node =>
-          node.parentId ? 0.08 : 0.2,
-        ),
-      )
-      .force(
-        'y',
-        forceY<OrbitalSimulationNode>(node => getParentCoordinate(node, 'y', height / 2)).strength(node =>
-          node.parentId ? 0.08 : 0.2,
-        ),
+        'radial',
+        forceRadial<OrbitalSimulationNode>(node => node.orbitRadius, width / 2, height / 2).strength(0.9),
       )
       .force('collision', forceCollide<OrbitalSimulationNode>().radius(node => node.radius + 12).strength(0.95))
-      .force('orbit', createOrbitForce(nodeLookup, node => node.orbitRadius))
-      .velocityDecay(0.3);
+      .velocityDecay(0.32);
 
     if (nodesData.length) {
       nodesData[0].x = width / 2;
       nodesData[0].y = height / 2;
-      nodesData[0].fx = width / 2;
-      nodesData[0].fy = height / 2;
     }
 
     simulation.alpha(1).alphaDecay(0.055);
@@ -451,9 +371,19 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       nodeSelection as Selection<SVGGElement, OrbitalSimulationNode, SVGGElement, unknown>,
     );
 
-    mergedNodes.select('circle').attr('r', node => node.radius);
+    mergedNodes.select('circle').each(function (node) {
+      const baseColor = getPaletteColor(colorPaletteId, node.depth);
+      const strokeColor = shiftColor(baseColor, -0.2);
+      select(this)
+        .attr('r', node.radius)
+        .attr('fill', baseColor)
+        .attr('stroke', strokeColor);
+    });
 
-    mergedNodes.select('text').text(node => node.name);
+    mergedNodes
+      .select('text')
+      .text(node => node.name)
+      .attr('fill', node => getReadableTextColor(getPaletteColor(colorPaletteId, node.depth)));
 
     mergedNodes.on('dblclick', (event, node) => {
       event.preventDefault();
@@ -481,27 +411,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     return () => {
       simulation.stop();
     };
-  }, [visibleNodes, visibleLinks, dimensions]);
-
-  useEffect(() => {
-    const nodeGroupElement = nodeGroupRef.current;
-    if (!nodeGroupElement) {
-      return;
-    }
-
-    const nodeSelection = select(nodeGroupElement)
-      .selectAll<SVGGElement, OrbitalSimulationNode>('g.orbital-node');
-
-    nodeSelection.select('circle').each(function (node) {
-      const baseColor = getPaletteColor(colorPaletteId, node.depth);
-      const strokeColor = shiftColor(baseColor, -0.2);
-      select(this).attr('fill', baseColor).attr('stroke', strokeColor);
-    });
-
-    nodeSelection
-      .select('text')
-      .attr('fill', node => getReadableTextColor(getPaletteColor(colorPaletteId, node.depth)));
-  }, [colorPaletteId, visibleNodes]);
+  }, [visibleNodes, visibleLinks, dimensions, expandedNodes, colorPaletteId]);
 
   if (!rootNode) {
     return (
