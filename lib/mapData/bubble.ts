@@ -47,7 +47,7 @@ const collectBubbleNodes = (
       : 0;
 
     const ownSize = ensurePositiveNumber(folder.metrics?.totalSize);
-    const computedSize = ownSize > 0 ? ownSize : childrenTotal;
+    const computedSize = Math.max(ownSize, childrenTotal);
 
     nodes.push({
       id: folder.id,
