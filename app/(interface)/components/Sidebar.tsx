@@ -21,6 +21,7 @@ import PostItNote from "./svg/PostItNote";
 import DialogueIcon from "./svg/DialogueIcon";
 import Parallelogram from "./svg/Parallelogram";
 import logoIcon from "../../../public/assets/folder-fox.png";
+import { BOX_TYPES, BoxType } from "@/lib/mapTypes";
 
 interface SidebarProps {
   isDark: boolean;
@@ -31,7 +32,7 @@ interface SidebarProps {
   onGridThicknessChange: (thickness: number) => void;
   onCreateText: () => void;
   isTextMode: boolean;
-  onCreateBox: (boxType: string) => void;
+  onCreateBox: (boxType: BoxType) => void;
   onCenterMap: () => void;
   onCreateComment: () => void;
   isCommentMode: boolean;
@@ -139,7 +140,7 @@ export function Sidebar({
       ),
       description: "Post-it note with pin",
     },
-  ];
+  ] satisfies Array<{ id: BoxType; label: string; icon: React.ReactNode; description: string }>;
 
   const toggleSubmenu = (submenu: string) => {
     if (activeSubmenu !== submenu) {
@@ -154,7 +155,9 @@ export function Sidebar({
 
   const handleOptionSelect = (optionId: string) => {
     if (activeSubmenu === "shapes") {
-      onCreateBox(optionId);
+      if (BOX_TYPES.includes(optionId as BoxType)) {
+        onCreateBox(optionId as BoxType);
+      }
     }
     if (activeSubmenu === "layout") {
       onLayoutSelect(optionId);

@@ -1,16 +1,9 @@
 import React, { useMemo } from 'react';
 
 import type { FolderItem } from '../right-sidebar/data';
+import { buildBubbleNodes, type BubbleNode } from '@/lib/mapData';
 
-interface BubbleDatum {
-  id: string;
-  name: string;
-  size: number;
-  depth: number;
-  parentId: string | null;
-}
-
-interface PositionedBubble extends BubbleDatum {
+interface PositionedBubble extends BubbleNode {
   radius: number;
   x: number;
   y: number;
@@ -56,46 +49,7 @@ const formatSize = (bytes: number): string => {
   return `${formatted} ${units[unitIndex]}`;
 };
 
-const collectSelectedFolders = (folders: FolderItem[]): BubbleDatum[] => {
-  const result: BubbleDatum[] = [];
-
-  const traverse = (
-    items: FolderItem[],
-    depth: number,
-    parentId: string | null
-  ): number => {
-    let branchTotal = 0;
-
-    items.forEach(item => {
-      if (!item.isSelected) {
-        return;
-      }
-
-      const children = item.children ? [...item.children] : [];
-      const childrenTotal = children.length > 0 ? traverse(children, depth + 1, item.id) : 0;
-
-      const ownSize = typeof item.metrics?.totalSize === 'number' ? item.metrics.totalSize : undefined;
-      const computedSize = ownSize && ownSize > 0 ? ownSize : childrenTotal;
-
-      result.push({
-        id: item.id,
-        name: item.name,
-        size: computedSize,
-        depth,
-        parentId,
-      });
-
-      branchTotal += computedSize;
-    });
-
-    return branchTotal;
-  };
-
-  traverse(folders, 0, null);
-  return result;
-};
-
-const computeRadiusScale = (data: BubbleDatum[]): ((size: number) => number) => {
+const computeRadiusScale = (data: BubbleNode[]): ((size: number) => number) => {
   const sizes = data.map(item => item.size).filter(size => size > 0);
   if (sizes.length === 0) {
     return () => MIN_RADIUS * 0.6;
@@ -117,7 +71,7 @@ const computeRadiusScale = (data: BubbleDatum[]): ((size: number) => number) => 
   };
 };
 
-const placeBubbles = (data: BubbleDatum[]): BubbleLayoutResult => {
+const placeBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
   const sorted = [...data].sort((a, b) => b.size - a.size);
   const scaleRadius = computeRadiusScale(sorted);
   const placed: PositionedBubble[] = [];
@@ -219,8 +173,8 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
       return { bubbles: [], width: 0, height: 0 };
     }
 
-    const selected = collectSelectedFolders(folders)
-      .filter(item => item.size > 0 && item.parentId !== null);
+    const selected = buildBubbleNodes(folders)
+      .filter(item => item.size > 0 && item.depth > 0);
 
     return placeBubbles(selected);
   }, [folders]);
