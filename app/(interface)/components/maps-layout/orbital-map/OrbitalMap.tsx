@@ -133,6 +133,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   const orbitRingGroupRef = useRef<SVGGElement | null>(null);
   const linkGroupRef = useRef<SVGGElement | null>(null);
   const nodeGroupRef = useRef<SVGGElement | null>(null);
+  const simulationRef = useRef<Simulation<OrbitalSimulationNode, OrbitalLink> | null>(null);
+  const nodeStoreRef = useRef<Map<string, OrbitalSimulationNode>>(new Map());
 
   const [dimensions, setDimensions] = useState({ width: 960, height: 720 });
 
@@ -244,9 +246,6 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       return;
     }
 
-    const nodesData = visibleNodes.map(node => ({ ...node }));
-    const linksData = visibleLinks.map(link => ({ ...link }));
-
     const svgSelection = select(svgElement);
     svgSelection
       .attr('width', width)
@@ -327,7 +326,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     const linkSelection = linkGroup
       .selectAll<SVGLineElement, OrbitalLink>('line.orbital-link')
-      .data(linksData, linkKey);
+      .data(linkData, linkKey);
 
     linkSelection.exit().remove();
 
@@ -393,6 +392,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     enableNodeDrag(simulation, mergedNodes);
 
+    simulation.on('tick', null);
     simulation.on('tick', () => {
       mergedNodes.attr('transform', node => `translate(${node.x ?? width / 2}, ${node.y ?? height / 2})`);
 
@@ -407,9 +407,12 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
         .attr('cy', node => node.y ?? height / 2)
         .attr('r', node => getOrbitRadiusForDepth(node.depth + 1));
     });
+  }, [visibleNodes, visibleLinks, dimensions, expandedNodes]);
 
+  useEffect(() => {
     return () => {
-      simulation.stop();
+      simulationRef.current?.stop();
+      simulationRef.current = null;
     };
   }, [visibleNodes, visibleLinks, dimensions, expandedNodes, colorPaletteId]);
 
