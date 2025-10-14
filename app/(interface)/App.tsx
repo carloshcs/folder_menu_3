@@ -8,7 +8,7 @@ import { TextBox } from "./components/TextBox";
 import { TextToolbar } from "./components/TextToolbar";
 import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
-import { BubbleSizeMap } from "./components/maps-layout";
+import { BubbleSizeMap, OrbitalMap } from "./components/maps-layout";
 import { BoxType } from "@/lib/mapTypes";
 import { FolderItem } from "./components/right-sidebar/data";
 
@@ -88,6 +88,7 @@ export default function App() {
   const [currentMap, setCurrentMap] = useState('My Project Map');
   const [existingMaps, setExistingMaps] = useState(['My Project Map', 'Team Workspace', 'Design System', 'Marketing Campaign']);
   const [selectedLayout, setSelectedLayout] = useState<string | null>(null);
+  const [selectedPaletteId, setSelectedPaletteId] = useState<string>("blue");
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Check for saved theme preference or default to light mode
@@ -606,6 +607,8 @@ export default function App() {
         isCommentMode={isCommentMode}
         onLayoutSelect={handleLayoutSelect}
         selectedLayout={selectedLayout}
+        onPaletteSelect={setSelectedPaletteId}
+        selectedPaletteId={selectedPaletteId}
       />
       <RightSidebar 
         isDark={isDark} 
@@ -655,7 +658,9 @@ export default function App() {
 
 
           {selectedLayout === 'bubble-size' ? (
-            <BubbleSizeMap folders={folderData} />
+            <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+          ) : selectedLayout === 'orbital' ? (
+            <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
           ) : (
             <>
               {/* Cloud Service Icons - Fixed size */}

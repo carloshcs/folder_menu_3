@@ -1,2 +1,2 @@
-export type { BubbleNode } from "./bubble";
-export { buildBubbleNodes } from "./bubble";
+export type { BubbleNode, BubbleTreeNode, BubbleTree } from "./bubble";
+export { buildBubbleNodes, buildBubbleTree } from "./bubble";
