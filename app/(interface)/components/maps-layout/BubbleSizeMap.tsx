@@ -1,7 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import type { FolderItem } from '../right-sidebar/data';
-import { buildBubbleNodes, type BubbleNode } from '@/lib/mapData';
+import {
+  buildBubbleNodes,
+  buildBubbleTree,
+  type BubbleNode,
+  type BubbleTree,
+  type BubbleTreeNode,
+} from '@/lib/mapData';
+import { handleNodeDoubleClick } from '@/app/(interface)/lib/mapUtils/interactions';
+import {
+  getPaletteColor,
+  getReadableTextColor,
+  shiftColor,
+} from '@/app/(interface)/lib/mapUtils/palettes';
 
 interface PositionedBubble extends BubbleNode {
   radius: number;
@@ -27,15 +39,6 @@ const MIN_RADIUS = 48;
 const MAX_RADIUS = 160;
 const BUBBLE_SPACING = 12;
 const CONTAINER_PADDING = 48;
-
-const colorPalette = [
-  ['#60a5fa', '#2563eb'],
-  ['#34d399', '#0f766e'],
-  ['#fbbf24', '#d97706'],
-  ['#f472b6', '#c026d3'],
-  ['#a78bfa', '#6d28d9'],
-  ['#f97316', '#b45309']
-];
 
 const formatSize = (bytes: number): string => {
   if (bytes <= 0) {
@@ -77,46 +80,14 @@ const computeRadiusScale = (data: BubbleNode[]): ((size: number) => number) => {
   };
 };
 
-interface TreeBubble extends BubbleNode {
-  radius: number;
-  x: number;
-  y: number;
-  children: TreeBubble[];
-}
+const layoutBubbles = (tree: BubbleTree, expandedNodes: Set<string>): BubbleLayoutResult => {
+  const { roots, nodeMap } = tree;
 
-const layoutBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
-  const visible = data.filter(item => item.size > 0 && item.depth > 0);
-
-  if (visible.length === 0) {
+  if (!roots.length) {
     return { bubbles: [], connections: [], width: 0, height: 0 };
   }
 
-  const scaleRadius = computeRadiusScale(visible);
-  const nodeMap = new Map<string, TreeBubble>();
-
-  visible.forEach(item => {
-    nodeMap.set(item.id, {
-      ...item,
-      radius: scaleRadius(item.size),
-      x: 0,
-      y: 0,
-      children: [],
-    });
-  });
-
-  const roots: TreeBubble[] = [];
-
-  nodeMap.forEach(node => {
-    if (node.parentId && nodeMap.has(node.parentId)) {
-      nodeMap.get(node.parentId)?.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-
-  const sortBySizeDesc = (a: TreeBubble, b: TreeBubble) => b.size - a.size;
-  roots.sort(sortBySizeDesc);
-  nodeMap.forEach(node => node.children.sort(sortBySizeDesc));
+  const scaleRadius = computeRadiusScale(Array.from(nodeMap.values()));
 
   const depthSpacing = MAX_RADIUS * 1.5;
   const horizontalSpacing = MAX_RADIUS + BUBBLE_SPACING * 2;
@@ -126,49 +97,66 @@ const layoutBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
 
-  const assignPositions = (node: TreeBubble, depth: number, startX: number): number => {
-    node.y = CONTAINER_PADDING + depth * depthSpacing + node.radius;
+  const positioned = new Map<string, PositionedBubble>();
 
-    if (node.children.length === 0) {
-      node.x = startX + node.radius;
+  const assignPositions = (node: BubbleTreeNode, depth: number, startX: number): number => {
+    const radius = scaleRadius(node.size);
+    const y = CONTAINER_PADDING + depth * depthSpacing + radius;
+    const nodePosition: PositionedBubble = {
+      ...node,
+      radius,
+      x: startX + radius,
+      y,
+    };
 
-      minX = Math.min(minX, node.x - node.radius);
-      maxX = Math.max(maxX, node.x + node.radius);
-      maxY = Math.max(maxY, node.y + node.radius);
+    positioned.set(node.id, nodePosition);
 
-      return node.x + node.radius + horizontalSpacing;
+    minX = Math.min(minX, nodePosition.x - radius);
+    maxX = Math.max(maxX, nodePosition.x + radius);
+    maxY = Math.max(maxY, nodePosition.y + radius);
+
+    const isExpanded = expandedNodes.has(node.id);
+    const children = isExpanded ? node.children : [];
+
+    if (children.length === 0) {
+      return nodePosition.x + radius + horizontalSpacing;
     }
 
     let childStart = startX;
 
-    node.children.forEach(child => {
+    children.forEach(child => {
       childStart = assignPositions(child, depth + 1, childStart);
     });
 
-    const firstChild = node.children[0];
-    const lastChild = node.children[node.children.length - 1];
-    const childrenCenter = (firstChild.x + lastChild.x) / 2;
+    const firstChild = positioned.get(children[0].id);
+    const lastChild = positioned.get(children[children.length - 1].id);
 
-    node.x = childrenCenter;
+    if (firstChild && lastChild) {
+      nodePosition.x = (firstChild.x + lastChild.x) / 2;
+      positioned.set(node.id, nodePosition);
 
-    minX = Math.min(minX, node.x - node.radius);
-    maxX = Math.max(maxX, node.x + node.radius);
-    maxY = Math.max(maxY, node.y + node.radius);
+      minX = Math.min(minX, nodePosition.x - radius);
+      maxX = Math.max(maxX, nodePosition.x + radius);
+    }
 
-    return Math.max(childStart, node.x + node.radius + horizontalSpacing);
+    return Math.max(childStart, nodePosition.x + radius + horizontalSpacing);
   };
 
   roots.forEach(root => {
     currentX = assignPositions(root, 0, currentX);
   });
 
-  const shiftX = Number.isFinite(minX) ? CONTAINER_PADDING - minX : 0;
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
+    return { bubbles: [], connections: [], width: 0, height: 0 };
+  }
 
-  nodeMap.forEach(node => {
-    node.x += shiftX;
+  const shiftX = CONTAINER_PADDING - minX;
+
+  positioned.forEach(position => {
+    position.x += shiftX;
   });
 
-  const bubbles: PositionedBubble[] = Array.from(nodeMap.values()).map(({ children, ...bubble }) => bubble);
+  const bubbles: PositionedBubble[] = Array.from(positioned.values());
   const positionedMap = new Map(bubbles.map(bubble => [bubble.id, bubble]));
 
   const connections: BubbleConnection[] = [];
@@ -191,12 +179,8 @@ const layoutBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
     });
   });
 
-  const width = Number.isFinite(maxX)
-    ? maxX - minX + CONTAINER_PADDING * 2
-    : 0;
-  const height = Number.isFinite(maxY)
-    ? maxY + CONTAINER_PADDING
-    : 0;
+  const width = maxX - minX + CONTAINER_PADDING * 2;
+  const height = Number.isFinite(maxY) ? maxY + CONTAINER_PADDING : 0;
 
   return {
     bubbles,
@@ -208,17 +192,21 @@ const layoutBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
 
 interface BubbleSizeMapProps {
   folders: FolderItem[];
+  colorPaletteId?: string;
 }
 
-export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
-  const layout = useMemo(() => {
-    if (!folders || folders.length === 0) {
-      return { bubbles: [], width: 0, height: 0 };
-    }
+export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPaletteId }) => {
+  const bubbleNodes = useMemo(() => buildBubbleNodes(folders), [folders]);
+  const bubbleTree = useMemo<BubbleTree>(() => buildBubbleTree(bubbleNodes, { minDepth: 1 }), [bubbleNodes]);
+  const allNodeIds = useMemo(() => Array.from(bubbleTree.nodeMap.keys()), [bubbleTree]);
 
-    const bubbleNodes = buildBubbleNodes(folders);
-    return layoutBubbles(bubbleNodes);
-  }, [folders]);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set(allNodeIds));
+
+  useEffect(() => {
+    setExpandedNodes(new Set(allNodeIds));
+  }, [allNodeIds]);
+
+  const layout = useMemo(() => layoutBubbles(bubbleTree, expandedNodes), [bubbleTree, expandedNodes]);
 
   if (!layout.bubbles.length) {
     return (
@@ -246,33 +234,48 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
               y1={connection.fromY}
               x2={connection.toX}
               y2={connection.toY}
-              stroke="rgba(255,255,255,0.45)"
+              stroke="rgba(148,163,184,0.35)"
               strokeWidth={2}
               strokeLinecap="round"
             />
           ))}
         </svg>
         {layout.bubbles.map((bubble, index) => {
-          const palette = colorPalette[index % colorPalette.length];
-          const gradient = `radial-gradient(circle at 30% 30%, ${palette[0]} 0%, ${palette[1]} 100%)`;
+          const baseColor = getPaletteColor(colorPaletteId, index);
+          const gradientStart = shiftColor(baseColor, 0.35);
+          const gradientEnd = shiftColor(baseColor, -0.28);
+          const textColor = getReadableTextColor(gradientEnd);
+          const gradient = `radial-gradient(circle at 30% 30%, ${gradientStart} 0%, ${gradientEnd} 100%)`;
 
           return (
             <div
               key={bubble.id}
-              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center text-white"
+              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center"
               style={{
                 width: bubble.radius * 2,
                 height: bubble.radius * 2,
                 left: bubble.x - bubble.radius,
                 top: bubble.y - bubble.radius,
                 background: gradient,
+                color: textColor,
+              }}
+              onDoubleClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const treeNode = bubbleTree.nodeMap.get(bubble.id);
+                if (treeNode) {
+                  handleNodeDoubleClick(treeNode, setExpandedNodes);
+                }
               }}
             >
               <div className="px-4">
                 <div className="text-sm font-semibold leading-tight break-words">
                   {bubble.name}
                 </div>
-                <div className="text-xs text-white/80 mt-1">
+                <div
+                  className="text-xs mt-1"
+                  style={{ color: shiftColor(textColor, 0.35) }}
+                >
                   {formatSize(bubble.size)}
                 </div>
               </div>

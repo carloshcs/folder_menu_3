@@ -9,6 +9,15 @@ export interface BubbleNode {
   serviceId: string | null;
 }
 
+export interface BubbleTreeNode extends BubbleNode {
+  children: BubbleTreeNode[];
+}
+
+export interface BubbleTree {
+  roots: BubbleTreeNode[];
+  nodeMap: Map<string, BubbleTreeNode>;
+}
+
 interface TraverseContext {
   serviceId: string | null;
   parentId: string | null;
@@ -77,4 +86,38 @@ export const buildBubbleNodes = (folders: FolderItem[]): BubbleNode[] => {
   );
 
   return nodes;
+};
+
+const sortBySizeDesc = (a: BubbleTreeNode, b: BubbleTreeNode) => b.size - a.size;
+
+export const buildBubbleTree = (
+  nodes: BubbleNode[],
+  options: { minDepth?: number } = {},
+): BubbleTree => {
+  const { minDepth = 0 } = options;
+
+  const filteredNodes = nodes.filter(node => node.size > 0 && node.depth >= minDepth);
+  const nodeMap = new Map<string, BubbleTreeNode>();
+
+  filteredNodes.forEach(node => {
+    nodeMap.set(node.id, {
+      ...node,
+      children: [],
+    });
+  });
+
+  const roots: BubbleTreeNode[] = [];
+
+  nodeMap.forEach(node => {
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      nodeMap.get(node.parentId)?.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  roots.sort(sortBySizeDesc);
+  nodeMap.forEach(node => node.children.sort(sortBySizeDesc));
+
+  return { roots, nodeMap };
 };
