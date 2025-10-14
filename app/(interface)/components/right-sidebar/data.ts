@@ -1,5 +1,3 @@
-import { buildGoogleDriveTree, type DriveDatabase } from './data-sources/googleDrive';
-
 export interface FolderMetrics {
   totalSize?: number;
   fileCount?: number;
@@ -62,33 +60,6 @@ const clone = <T,>(value: T): T => {
 
 let googleDriveTreeCache: FolderItem[] | null = null;
 let baseFoldersCache: FolderItem[] | null = null;
-let driveDatabasePromise: Promise<DriveDatabase> | null = null;
-
-const DRIVE_DATABASE_PATH = '/api/drive-database';
-
-const loadDriveDatabase = async (): Promise<DriveDatabase> => {
-  if (typeof window === 'undefined') {
-    throw new Error('Google Drive database can only be loaded in the browser');
-  }
-
-  if (!driveDatabasePromise) {
-    driveDatabasePromise = fetch(DRIVE_DATABASE_PATH, {
-      cache: 'force-cache',
-      headers: {
-        Accept: 'application/json'
-      }
-    })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch drive database: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json() as Promise<DriveDatabase>;
-      });
-  }
-
-  return driveDatabasePromise;
-};
 
 const buildBaseFolders = (): FolderItem[] => {
   const folders = clone(BASE_FOLDERS);
@@ -117,16 +88,12 @@ export const createInitialFolders = (): FolderItem[] => clone(ensureBaseFoldersC
 export const getBaseFolders = (): FolderItem[] => ensureBaseFoldersCache();
 
 export const loadGoogleDriveTree = async (): Promise<FolderItem[]> => {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-
   if (googleDriveTreeCache) {
     return clone(googleDriveTreeCache);
   }
 
-  const database = await loadDriveDatabase();
-  const tree = buildGoogleDriveTree(database);
+  const module = await import('./data-sources/googleDrive');
+  const tree = module.buildGoogleDriveTree();
 
   googleDriveTreeCache = tree;
   baseFoldersCache = buildBaseFolders();
