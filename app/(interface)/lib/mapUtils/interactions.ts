@@ -1,8 +1,11 @@
 import type React from 'react';
-import type { Simulation, SimulationNodeDatum } from 'd3-force';
-import type { Selection } from 'd3-selection';
-import { drag } from 'd3-drag';
-import type { D3DragEvent } from 'd3-drag';
+import {
+  D3DragEvent,
+  Selection,
+  drag,
+  type Simulation,
+  type SimulationNodeDatum,
+} from 'd3';
 
 export const enableNodeDrag = <T extends SimulationNodeDatum>(
   simulation: Simulation<T, undefined>,
