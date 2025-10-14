@@ -6,7 +6,6 @@ import {
   forceCollide,
   forceLink,
   forceManyBody,
-  forceRadial,
   forceSimulation,
   select,
   zoom,
@@ -41,6 +40,7 @@ interface OrbitalMapProps {
 interface OrbitalSimulationNode extends BubbleTreeNode {
   orbitRadius: number;
   radius: number;
+  parentId: string | null;
   x?: number;
   y?: number;
   vx?: number;
@@ -252,7 +252,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       .attr('width', width)
       .attr('height', height)
       .attr('viewBox', `0 0 ${width} ${height}`)
-      .attr('preserveAspectRatio', 'xMidYMid meet');
+      .attr('preserveAspectRatio', 'xMidYMid meet')
+      .style('overflow', 'visible');
 
     const orbitRingGroup = select(orbitRingGroupElement);
     const linkGroup = select(linkGroupElement);
