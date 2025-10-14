@@ -35,15 +35,6 @@ const MAX_RADIUS = 160;
 const BUBBLE_SPACING = 12;
 const CONTAINER_PADDING = 48;
 
-const colorPalette = [
-  ['#60a5fa', '#2563eb'],
-  ['#34d399', '#0f766e'],
-  ['#fbbf24', '#d97706'],
-  ['#f472b6', '#c026d3'],
-  ['#a78bfa', '#6d28d9'],
-  ['#f97316', '#b45309']
-];
-
 const formatSize = (bytes: number): string => {
   if (bytes <= 0) {
     return '0 KB';
@@ -196,6 +187,7 @@ const layoutBubbles = (tree: BubbleTree, expandedNodes: Set<string>): BubbleLayo
 
 interface BubbleSizeMapProps {
   folders: FolderItem[];
+  colorPaletteId?: string;
 }
 
 export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
@@ -237,26 +229,38 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
               y1={connection.fromY}
               x2={connection.toX}
               y2={connection.toY}
-              stroke="rgba(255,255,255,0.45)"
+              stroke="rgba(148,163,184,0.35)"
               strokeWidth={2}
               strokeLinecap="round"
             />
           ))}
         </svg>
         {layout.bubbles.map((bubble, index) => {
-          const palette = colorPalette[index % colorPalette.length];
-          const gradient = `radial-gradient(circle at 30% 30%, ${palette[0]} 0%, ${palette[1]} 100%)`;
+          const baseColor = getPaletteColor(colorPaletteId, index);
+          const gradientStart = shiftColor(baseColor, 0.35);
+          const gradientEnd = shiftColor(baseColor, -0.28);
+          const textColor = getReadableTextColor(gradientEnd);
+          const gradient = `radial-gradient(circle at 30% 30%, ${gradientStart} 0%, ${gradientEnd} 100%)`;
 
           return (
             <div
               key={bubble.id}
-              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center text-white"
+              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center"
               style={{
                 width: bubble.radius * 2,
                 height: bubble.radius * 2,
                 left: bubble.x - bubble.radius,
                 top: bubble.y - bubble.radius,
                 background: gradient,
+                color: textColor,
+              }}
+              onDoubleClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const treeNode = bubbleTree.nodeMap.get(bubble.id);
+                if (treeNode) {
+                  handleNodeDoubleClick(treeNode, setExpandedNodes);
+                }
               }}
               onDoubleClick={event => {
                 event.preventDefault();
@@ -271,7 +275,10 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
                 <div className="text-sm font-semibold leading-tight break-words">
                   {bubble.name}
                 </div>
-                <div className="text-xs text-white/80 mt-1">
+                <div
+                  className="text-xs mt-1"
+                  style={{ color: shiftColor(textColor, 0.35) }}
+                >
                   {formatSize(bubble.size)}
                 </div>
               </div>

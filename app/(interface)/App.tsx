@@ -88,6 +88,7 @@ export default function App() {
   const [currentMap, setCurrentMap] = useState('My Project Map');
   const [existingMaps, setExistingMaps] = useState(['My Project Map', 'Team Workspace', 'Design System', 'Marketing Campaign']);
   const [selectedLayout, setSelectedLayout] = useState<string | null>(null);
+  const [selectedPaletteId, setSelectedPaletteId] = useState<string>("blue");
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Check for saved theme preference or default to light mode
@@ -606,6 +607,8 @@ export default function App() {
         isCommentMode={isCommentMode}
         onLayoutSelect={handleLayoutSelect}
         selectedLayout={selectedLayout}
+        onPaletteSelect={setSelectedPaletteId}
+        selectedPaletteId={selectedPaletteId}
       />
       <RightSidebar 
         isDark={isDark} 

@@ -15,9 +15,16 @@ interface HorizontalSubmenuProps {
   options: SubmenuOption[];
   onSelect: (optionId: string) => void;
   className?: string;
+  selectedOptionId?: string | null;
 }
 
-export function HorizontalSubmenu({ isOpen, options, onSelect, className = '' }: HorizontalSubmenuProps) {
+export function HorizontalSubmenu({
+  isOpen,
+  options,
+  onSelect,
+  className = '',
+  selectedOptionId,
+}: HorizontalSubmenuProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -40,6 +47,7 @@ export function HorizontalSubmenu({ isOpen, options, onSelect, className = '' }:
                 min-w-[80px] h-[70px] transition-all duration-200
                 hover:bg-accent hover:text-accent-foreground text-muted-foreground
                 ${option.gradient ? 'text-white' : ''}
+                ${selectedOptionId === option.id ? 'ring-2 ring-primary' : ''}
               `}
               style={option.gradient ? { background: option.gradient } : {}}
               title={option.description}

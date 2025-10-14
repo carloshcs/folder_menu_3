@@ -38,6 +38,8 @@ interface SidebarProps {
   isCommentMode: boolean;
   onLayoutSelect: (layoutId: string) => void;
   selectedLayout: string | null;
+  onPaletteSelect: (paletteId: string) => void;
+  selectedPaletteId: string;
 }
 
 export function Sidebar({
@@ -55,6 +57,8 @@ export function Sidebar({
   isCommentMode,
   onLayoutSelect,
   selectedLayout,
+  onPaletteSelect,
+  selectedPaletteId,
 }: SidebarProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [showLogoTooltip, setShowLogoTooltip] = useState(false);
@@ -162,6 +166,9 @@ export function Sidebar({
     if (activeSubmenu === "layout") {
       onLayoutSelect(optionId);
     }
+    if (activeSubmenu === "colors") {
+      onPaletteSelect(optionId);
+    }
     setActiveSubmenu(null);
   };
 
@@ -255,6 +262,7 @@ export function Sidebar({
             isOpen={activeSubmenu === "colors"}
             options={colorOptions}
             onSelect={handleOptionSelect}
+            selectedOptionId={selectedPaletteId}
           />
         </div>
 
