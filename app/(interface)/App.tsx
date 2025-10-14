@@ -35,27 +35,6 @@ const ZOOM_MAX = 300;
 const ZOOM_BUTTON_STEP = 25;
 const ZOOM_WHEEL_STEP = 10;
 
-const CLOUD_SERVICES = [
-  {
-    id: "notion",
-    name: "Notion",
-    color: "bg-[#000000] text-white",
-    position: { x: 400, y: 300 },
-  },
-  {
-    id: "onedrive",
-    name: "OneDrive",
-    color: "bg-[#0078d4] text-white",
-    position: { x: 800, y: 300 },
-  },
-  {
-    id: "dropbox",
-    name: "Dropbox",
-    color: "bg-[#0061ff] text-white",
-    position: { x: 600, y: 500 },
-  },
-] as const;
-
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -87,7 +66,7 @@ export default function App() {
   const [isCommentDragging, setIsCommentDragging] = useState(false);
   const [currentMap, setCurrentMap] = useState('My Project Map');
   const [existingMaps, setExistingMaps] = useState(['My Project Map', 'Team Workspace', 'Design System', 'Marketing Campaign']);
-  const [selectedLayout, setSelectedLayout] = useState<string | null>(null);
+  const [selectedLayout, setSelectedLayout] = useState<string | null>('orbital');
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>("blue");
   const mapRef = useRef<HTMLDivElement>(null);
 
@@ -654,36 +633,16 @@ export default function App() {
             transformOrigin: "0 0",
           }}
         >
-        {gridOverlay}
+          {gridOverlay}
 
 
-          {selectedLayout === 'bubble-size' ? (
-            <BubbleSizeMap folders={folderData} />
-          ) : selectedLayout === 'orbital' ? (
-            <OrbitalMap folders={folderData} />
-          ) : (
-            <>
-              {/* Cloud Service Icons - Fixed size */}
-              {CLOUD_SERVICES.map((service) => (
-                <div
-                  key={service.id}
-                  className={`absolute rounded-xl border-2 border-transparent hover:border-white/20 transition-all duration-200 ${service.color} shadow-lg hover:shadow-xl cursor-pointer select-none`}
-                  style={{
-                    left: service.position.x + "px",
-                    top: service.position.y + "px",
-                    width: "120px",
-                    height: "80px",
-                  }}
-                >
-                  <div className="p-4 h-full flex items-center justify-center text-center">
-                    <span className="font-medium text-sm">
-                      {service.name}
-                    </span>
-                  </div>
-                </div>
-              ))}
-
-              {/* Text Elements */}
+            {selectedLayout === 'bubble-size' ? (
+              <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+            ) : selectedLayout === 'orbital' ? (
+              <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+            ) : (
+              <>
+                {/* Text Elements */}
               {textElements.map((textElement) => (
                 <TextBox
                   key={textElement.id}
