@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Plus, Minus, Move, Pin, Folder } from "lucide-react";
 import { Input } from "./ui/input";
@@ -10,7 +10,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
+import Image from "next/image";
 
 interface FolderItem {
   id: string;
@@ -53,9 +53,24 @@ export function TopNavigation({
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  const HIDE_DELAY_MS = 200; // configurable fade delay
+  const HIDE_DELAY_MS = 200;
+  const SEARCH_DELAY_MS = 100;
 
-  // ✅ Correct logo paths (served from /public/assets)
+  // ✅ Preload small service logos for instant loading
+  useEffect(() => {
+    const logos = [
+      "/assets/dropbox-logo.png",
+      "/assets/google-drive-logo.png",
+      "/assets/notion-logo.png",
+      "/assets/onedrive-logo.png",
+    ];
+    logos.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
+
+  // ✅ Logo paths (served from /public/assets)
   const serviceLogos: Record<string, string> = {
     Notion: "/assets/notion-logo.png",
     OneDrive: "/assets/onedrive-logo.png",
@@ -63,13 +78,14 @@ export function TopNavigation({
     "Google Drive": "/assets/google-drive-logo.png",
   };
 
+  // ✅ Flatten folder tree (computed once per folderData change)
   const flattenFolders = (
     folders: FolderItem[],
     serviceName = "",
     currentPath: string[] = []
   ): SearchResult[] => {
     const results: SearchResult[] = [];
-    folders.forEach((folder) => {
+    for (const folder of folders) {
       const isService = currentPath.length === 0;
       const newPath = isService ? [folder.name] : [...currentPath, folder.name];
       const service = isService ? folder.name : serviceName;
@@ -82,11 +98,13 @@ export function TopNavigation({
       if (folder.children) {
         results.push(...flattenFolders(folder.children, service, newPath));
       }
-    });
+    }
     return results;
   };
 
-  // 🧭 Show/hide top bar only inside canvas region
+  const flatFolders = useMemo(() => flattenFolders(folderData), [folderData]);
+
+  // 🧭 Show/hide bar based on cursor position
   useEffect(() => {
     let hideTimeoutId: NodeJS.Timeout;
 
@@ -116,20 +134,18 @@ export function TopNavigation({
     };
   }, [isPinned, isTyping, HIDE_DELAY_MS]);
 
-  // 🔍 Search logic
+  // 🔍 Optimized Search
   useEffect(() => {
     if (searchQuery.trim().length >= 2) {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
       searchTimeoutRef.current = setTimeout(() => {
-        const flatFolders = flattenFolders(folderData);
         const searchTerm = searchQuery.toLowerCase();
-        const directMatches = flatFolders.filter((folder) =>
+        const matches = flatFolders.filter((folder) =>
           folder.name.toLowerCase().includes(searchTerm)
         );
-        const filteredResults = directMatches.slice(0, 8);
-        setSearchResults(filteredResults);
+        setSearchResults(matches.slice(0, 8));
         setShowSearchResults(true);
-      }, 200);
+      }, SEARCH_DELAY_MS);
     } else {
       setSearchResults([]);
       setShowSearchResults(false);
@@ -138,9 +154,9 @@ export function TopNavigation({
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
-  }, [searchQuery, folderData]);
+  }, [searchQuery, flatFolders]);
 
-  // Click outside search box
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -154,17 +170,13 @@ export function TopNavigation({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleZoomIn = () => onZoomIn();
-  const handleZoomOut = () => onZoomOut();
-  const handleCenterMap = () => onCenterMap();
-
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setSearchQuery(e.target.value);
-
   const handlePin = () => {
     setIsPinned(!isPinned);
     if (!isPinned) setIsVisible(true);
   };
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setSearchQuery(e.target.value);
 
   const handleSearchResultClick = (result: SearchResult) => {
     setSearchQuery("");
@@ -172,13 +184,18 @@ export function TopNavigation({
     console.log("Navigate to:", result);
   };
 
+  // ✅ Optimized icon loader
   const getServiceIcon = (serviceName: string) => {
     const logo = serviceLogos[serviceName];
     return logo ? (
-      <img
+      <Image
         src={logo}
         alt={serviceName}
-        className="w-4 h-4 rounded-sm object-contain"
+        width={16}
+        height={16}
+        priority
+        style={{ width: "auto", height: "auto" }}
+        className="rounded-sm object-contain"
       />
     ) : (
       <Folder size={14} />
@@ -190,10 +207,10 @@ export function TopNavigation({
       {(isVisible || isPinned || isTyping) && (
         <div className="fixed top-4 left-[64px] right-[64px] flex justify-center z-50">
           <motion.div
-            initial={{ opacity: 0, y: -60 }}
+            initial={{ opacity: 0, y: -40 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -60 }}
-            transition={{ duration: 0.4, ease: "easeInOut" }}
+            exit={{ opacity: 0, y: -40 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
           >
             <div
               className={`border border-border rounded-2xl shadow-lg px-3 py-2 flex items-center gap-2 w-fit max-w-[90vw]
@@ -221,7 +238,7 @@ export function TopNavigation({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Search box */}
+              {/* Search Box */}
               <div
                 className="w-[150px] sm:w-[225px] lg:w-[250px] relative"
                 ref={searchContainerRef}
@@ -256,10 +273,10 @@ export function TopNavigation({
                 <AnimatePresence>
                   {showSearchResults && searchResults.length > 0 && (
                     <motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                      initial={{ opacity: 0, y: -6, scale: 0.97 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                      transition={{ duration: 0.1, ease: "easeOut" }}
                       className={`absolute top-full mt-2 w-80 border border-border rounded-lg shadow-lg z-60 max-h-64 overflow-y-auto
                         ${isDark ? "bg-neutral-900" : "bg-white"}
                       `}
@@ -267,7 +284,6 @@ export function TopNavigation({
                       <div className="p-2">
                         {searchResults.map((result) => {
                           const isServiceRoot = result.path.length === 1;
-
                           return (
                             <button
                               key={result.id}
@@ -276,7 +292,6 @@ export function TopNavigation({
                             >
                               <div className="flex items-center gap-2">
                                 {getServiceIcon(result.service)}
-
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm truncate">
                                     {isServiceRoot ? (
@@ -286,11 +301,12 @@ export function TopNavigation({
                                     ) : (
                                       <>
                                         <span className="text-muted-foreground">
-                                          {result.path
-                                            .slice(0, -1)
-                                            .join(" / ")}
+                                          {result.path.slice(0, -1).join(" / ")}
                                         </span>
-                                        <span className="text-muted-foreground"> / </span>
+                                        <span className="text-muted-foreground">
+                                          {" "}
+                                          /{" "}
+                                        </span>
                                         <span className="text-foreground font-semibold">
                                           {result.path[result.path.length - 1]}
                                         </span>
@@ -313,7 +329,7 @@ export function TopNavigation({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={handleCenterMap}
+                      onClick={onCenterMap}
                       className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
                     >
                       <Move size={16} />
@@ -331,7 +347,7 @@ export function TopNavigation({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        onClick={handleZoomOut}
+                        onClick={onZoomOut}
                         className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
                       >
                         <Minus size={14} />
@@ -351,7 +367,7 @@ export function TopNavigation({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
-                        onClick={handleZoomIn}
+                        onClick={onZoomIn}
                         className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
                       >
                         <Plus size={14} />
