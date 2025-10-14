@@ -658,9 +658,9 @@ export default function App() {
 
 
           {selectedLayout === 'bubble-size' ? (
-            <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+            <BubbleSizeMap folders={folderData} />
           ) : selectedLayout === 'orbital' ? (
-            <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+            <OrbitalMap folders={folderData} />
           ) : (
             <>
               {/* Cloud Service Icons - Fixed size */}

@@ -9,11 +9,6 @@ import {
   type BubbleTreeNode,
 } from '@/lib/mapData';
 import { handleNodeDoubleClick } from '@/app/(interface)/lib/mapUtils/interactions';
-import {
-  getPaletteColor,
-  getReadableTextColor,
-  shiftColor,
-} from '@/app/(interface)/lib/mapUtils/palettes';
 
 interface PositionedBubble extends BubbleNode {
   radius: number;
@@ -195,7 +190,7 @@ interface BubbleSizeMapProps {
   colorPaletteId?: string;
 }
 
-export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPaletteId }) => {
+export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
   const bubbleNodes = useMemo(() => buildBubbleNodes(folders), [folders]);
   const bubbleTree = useMemo<BubbleTree>(() => buildBubbleTree(bubbleNodes, { minDepth: 1 }), [bubbleNodes]);
   const allNodeIds = useMemo(() => Array.from(bubbleTree.nodeMap.keys()), [bubbleTree]);
@@ -258,6 +253,14 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPale
                 top: bubble.y - bubble.radius,
                 background: gradient,
                 color: textColor,
+              }}
+              onDoubleClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const treeNode = bubbleTree.nodeMap.get(bubble.id);
+                if (treeNode) {
+                  handleNodeDoubleClick(treeNode, setExpandedNodes);
+                }
               }}
               onDoubleClick={event => {
                 event.preventDefault();
