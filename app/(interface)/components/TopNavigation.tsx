@@ -10,7 +10,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
-import Image from "next/image";
+import NextImage from "next/image";
 
 interface FolderItem {
   id: string;
@@ -49,6 +49,7 @@ export function TopNavigation({
   const [isPinned, setIsPinned] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +57,7 @@ export function TopNavigation({
   const HIDE_DELAY_MS = 200;
   const SEARCH_DELAY_MS = 100;
 
-  // ✅ Preload small service logos for instant loading
+  // ✅ Preload service logos
   useEffect(() => {
     const logos = [
       "/assets/dropbox-logo.png",
@@ -70,7 +71,6 @@ export function TopNavigation({
     });
   }, []);
 
-  // ✅ Logo paths (served from /public/assets)
   const serviceLogos: Record<string, string> = {
     Notion: "/assets/notion-logo.png",
     OneDrive: "/assets/onedrive-logo.png",
@@ -78,7 +78,6 @@ export function TopNavigation({
     "Google Drive": "/assets/google-drive-logo.png",
   };
 
-  // ✅ Flatten folder tree (computed once per folderData change)
   const flattenFolders = (
     folders: FolderItem[],
     serviceName = "",
@@ -104,7 +103,7 @@ export function TopNavigation({
 
   const flatFolders = useMemo(() => flattenFolders(folderData), [folderData]);
 
-  // 🧭 Show/hide bar based on cursor position
+  // 🧭 Show/hide top bar
   useEffect(() => {
     let hideTimeoutId: NodeJS.Timeout;
 
@@ -134,7 +133,7 @@ export function TopNavigation({
     };
   }, [isPinned, isTyping, HIDE_DELAY_MS]);
 
-  // 🔍 Optimized Search
+  // 🔍 Search logic
   useEffect(() => {
     if (searchQuery.trim().length >= 2) {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
@@ -156,7 +155,6 @@ export function TopNavigation({
     };
   }, [searchQuery, flatFolders]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -184,11 +182,10 @@ export function TopNavigation({
     console.log("Navigate to:", result);
   };
 
-  // ✅ Optimized icon loader
   const getServiceIcon = (serviceName: string) => {
     const logo = serviceLogos[serviceName];
     return logo ? (
-      <Image
+      <NextImage
         src={logo}
         alt={serviceName}
         width={16}
@@ -217,7 +214,7 @@ export function TopNavigation({
                 ${isDark ? "bg-neutral-900" : "bg-white"}
               `}
             >
-              {/* Pin Button */}
+              {/* 📌 Pin */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -238,7 +235,7 @@ export function TopNavigation({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Search Box */}
+              {/* 🔍 Search box */}
               <div
                 className="w-[150px] sm:w-[225px] lg:w-[250px] relative"
                 ref={searchContainerRef}
@@ -256,9 +253,7 @@ export function TopNavigation({
                       setIsTyping(true);
                       searchQuery.length >= 2 && setShowSearchResults(true);
                     }}
-                    onBlur={() => {
-                      setTimeout(() => setIsTyping(false), 150);
-                    }}
+                    onBlur={() => setTimeout(() => setIsTyping(false), 150)}
                     className={`pl-9 h-8 rounded-lg text-sm border border-transparent transition-all duration-150
                       ${
                         isDark
@@ -268,63 +263,9 @@ export function TopNavigation({
                     `}
                   />
                 </div>
-
-                {/* Search Results */}
-                <AnimatePresence>
-                  {showSearchResults && searchResults.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                      transition={{ duration: 0.1, ease: "easeOut" }}
-                      className={`absolute top-full mt-2 w-80 border border-border rounded-lg shadow-lg z-60 max-h-64 overflow-y-auto
-                        ${isDark ? "bg-neutral-900" : "bg-white"}
-                      `}
-                    >
-                      <div className="p-2">
-                        {searchResults.map((result) => {
-                          const isServiceRoot = result.path.length === 1;
-                          return (
-                            <button
-                              key={result.id}
-                              onClick={() => handleSearchResultClick(result)}
-                              className="w-full text-left p-2 rounded-md hover:bg-accent transition-colors group"
-                            >
-                              <div className="flex items-center gap-2">
-                                {getServiceIcon(result.service)}
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm truncate">
-                                    {isServiceRoot ? (
-                                      <span className="text-foreground font-medium">
-                                        {result.name}
-                                      </span>
-                                    ) : (
-                                      <>
-                                        <span className="text-muted-foreground">
-                                          {result.path.slice(0, -1).join(" / ")}
-                                        </span>
-                                        <span className="text-muted-foreground">
-                                          {" "}
-                                          /{" "}
-                                        </span>
-                                        <span className="text-foreground font-semibold">
-                                          {result.path[result.path.length - 1]}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
 
-              {/* Center Map */}
+              {/* 🎯 Center Map */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -341,7 +282,7 @@ export function TopNavigation({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Zoom Controls */}
+              {/* 🔍 Zoom Controls */}
               <div className="flex items-center gap-0">
                 <TooltipProvider>
                   <Tooltip>
@@ -380,6 +321,90 @@ export function TopNavigation({
                 </TooltipProvider>
               </div>
             </div>
+
+            {/* Centered Search Dropdown */}
+            <AnimatePresence>
+              {showSearchResults && searchResults.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                  transition={{ duration: 0.1, ease: "easeOut" }}
+                  className={`absolute left-1/2 transform -translate-x-1/2 mt-3 min-w-[500px] sm:min-w-[640px] lg:min-w-[720px] xl:min-w-[840px] max-w-[85vw] border border-border rounded-xl shadow-lg z-60 ${
+                    isDark ? "bg-neutral-900" : "bg-white"
+                  }`}
+                >
+                  <div
+                    className={`max-h-64 overflow-y-auto overflow-x-hidden rounded-xl scrollbar-thin pr-2 ${
+                      isDark
+                        ? "scrollbar-thumb-neutral-700 scrollbar-track-transparent"
+                        : "scrollbar-thumb-neutral-300 scrollbar-track-transparent"
+                    }`}
+                    style={{
+                      scrollbarWidth: "thin",
+                      scrollbarColor: isDark
+                        ? "#525252 transparent"
+                        : "#d4d4d4 transparent",
+                    }}
+                  >
+                    <div className="p-2">
+                      {searchResults.map((result, index) => {
+                        const isServiceRoot = result.path.length === 1;
+                        const visiblePath = isServiceRoot
+                          ? result.path
+                          : result.path.slice(1);
+                        const isHovered = hoveredIndex === index;
+
+                        return (
+                          <button
+                            key={result.id}
+                            onMouseEnter={() => setHoveredIndex(index)}
+                            onMouseLeave={() => setHoveredIndex(null)}
+                            onClick={() => handleSearchResultClick(result)}
+                            className={`w-full text-left p-2 rounded-md transition-colors group ${
+                              isHovered
+                                ? isDark
+                                  ? "bg-neutral-800"
+                                  : "bg-neutral-100"
+                                : ""
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              {getServiceIcon(result.service)}
+                              <div className="flex-1 min-w-0 flex flex-col">
+                                <div className="text-sm leading-snug break-words whitespace-normal max-h-[3.5em] overflow-hidden text-ellipsis">
+                                  {isServiceRoot ? (
+                                    <span className="text-foreground font-medium">
+                                      {result.name}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <span className="text-muted-foreground">
+                                        {visiblePath
+                                          .slice(0, -1)
+                                          .join(" / ")}{" "}
+                                        /
+                                      </span>
+                                      <span className="text-foreground font-semibold ml-1">
+                                        {
+                                          visiblePath[
+                                            visiblePath.length - 1
+                                          ]
+                                        }
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </div>
       )}
