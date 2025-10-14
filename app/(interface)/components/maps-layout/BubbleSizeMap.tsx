@@ -9,11 +9,6 @@ import {
   type BubbleTreeNode,
 } from '@/lib/mapData';
 import { handleNodeDoubleClick } from '@/app/(interface)/lib/mapUtils/interactions';
-import {
-  getPaletteColor,
-  getReadableTextColor,
-  shiftColor,
-} from '@/app/(interface)/lib/utils/colors';
 
 interface PositionedBubble extends BubbleNode {
   radius: number;
@@ -195,7 +190,7 @@ interface BubbleSizeMapProps {
   colorPaletteId?: string;
 }
 
-export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPaletteId }) => {
+export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
   const bubbleNodes = useMemo(() => buildBubbleNodes(folders), [folders]);
   const bubbleTree = useMemo<BubbleTree>(() => buildBubbleTree(bubbleNodes, { minDepth: 1 }), [bubbleNodes]);
   const allNodeIds = useMemo(() => Array.from(bubbleTree.nodeMap.keys()), [bubbleTree]);
@@ -250,7 +245,7 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPale
           return (
             <div
               key={bubble.id}
-              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center px-4"
+              className="absolute rounded-full shadow-lg flex flex-col items-center justify-center text-center"
               style={{
                 width: bubble.radius * 2,
                 height: bubble.radius * 2,
@@ -267,12 +262,23 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders, colorPale
                   handleNodeDoubleClick(treeNode, setExpandedNodes);
                 }
               }}
+              onDoubleClick={event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const treeNode = bubbleTree.nodeMap.get(bubble.id);
+                if (treeNode) {
+                  handleNodeDoubleClick(treeNode, setExpandedNodes);
+                }
+              }}
             >
-              <div className="w-full">
+              <div className="px-4">
                 <div className="text-sm font-semibold leading-tight break-words">
                   {bubble.name}
                 </div>
-                <div className="text-xs mt-1" style={{ color: shiftColor(textColor, 0.35) }}>
+                <div
+                  className="text-xs mt-1"
+                  style={{ color: shiftColor(textColor, 0.35) }}
+                >
                   {formatSize(bubble.size)}
                 </div>
               </div>
