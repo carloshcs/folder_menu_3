@@ -7,12 +7,8 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
-  forceX,
-  forceY,
   select,
   zoom,
-  type ForceLink,
-  type Simulation,
   type SimulationLinkDatum,
   type ZoomBehavior,
 } from 'd3';
@@ -32,7 +28,7 @@ import {
 } from '@/app/(interface)/lib/utils/colors';
 
 const ORBITAL_BASE_RADIUS = 140;
-const ORBITAL_RADIUS_STEP = 150;
+const ORBITAL_RADIUS_STEP = 160;
 const NODE_RADIUS_BY_DEPTH = [60, 42, 30, 24, 20];
 const ZOOM_EXTENT: [number, number] = [0.35, 2.4];
 
@@ -58,7 +54,8 @@ type OrbitalLink = SimulationLinkDatum<OrbitalSimulationNode> & {
   target: string | OrbitalSimulationNode;
 };
 
-const getOrbitRadiusForDepth = (depth: number) => (depth === 0 ? 0 : depth * ORBITAL_RADIUS_STEP);
+const getOrbitRadiusForDepth = (depth: number) =>
+  depth === 0 ? 0 : ORBITAL_BASE_RADIUS + (depth - 1) * ORBITAL_RADIUS_STEP;
 
 const getNodeRadiusForDepth = (depth: number) =>
   NODE_RADIUS_BY_DEPTH[Math.min(depth, NODE_RADIUS_BY_DEPTH.length - 1)];
@@ -80,7 +77,6 @@ const computeVisibleGraph = (
       ...node,
       orbitRadius,
       radius: getNodeRadiusForDepth(depth),
-      parentId: parent?.id ?? null,
     };
 
     nodes.push(simulationNode);
@@ -128,57 +124,6 @@ const resolveCoordinate = (
   }
 
   return nodeLookup.get(value)?.[axis] ?? fallback;
-};
-
-const createOrbitForce = (
-  nodeLookup: Map<string, OrbitalSimulationNode>,
-  getRadius: (node: OrbitalSimulationNode) => number,
-) => {
-  const strength = 0.2;
-
-  const force = (alpha: number) => {
-    nodeLookup.forEach(node => {
-      if (!node.parentId) {
-        return;
-      }
-
-      const parent = nodeLookup.get(node.parentId);
-      if (!parent) {
-        return;
-      }
-
-      const parentX = parent.x ?? 0;
-      const parentY = parent.y ?? 0;
-      const nodeX = node.x ?? parentX;
-      const nodeY = node.y ?? parentY;
-
-      let dx = nodeX - parentX;
-      let dy = nodeY - parentY;
-      let distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance === 0) {
-        const angle = Math.random() * Math.PI * 2;
-        dx = Math.cos(angle);
-        dy = Math.sin(angle);
-        distance = 1;
-      }
-
-      const targetRadius = getRadius(node);
-      if (!targetRadius) {
-        return;
-      }
-
-      const delta = distance - targetRadius;
-      const adjustment = (delta / distance) * strength * alpha;
-
-      node.vx = (node.vx ?? 0) - dx * adjustment;
-      node.vy = (node.vy ?? 0) - dy * adjustment;
-    });
-  };
-
-  force.initialize = () => {};
-
-  return force;
 };
 
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
@@ -238,10 +183,6 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     const zoomBehaviour: ZoomBehavior<SVGSVGElement, unknown> = zoom<SVGSVGElement, unknown>()
       .scaleExtent(ZOOM_EXTENT)
-      .translateExtent([
-        [-Infinity, -Infinity],
-        [Infinity, Infinity],
-      ])
       .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
         zoomGroupSelection.attr('transform', event.transform.toString());
       });
@@ -317,171 +258,44 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const linkGroup = select(linkGroupElement);
     const nodeGroup = select(nodeGroupElement);
 
-    const nodeLookup = nodeStoreRef.current;
-
-    const visibleIds = new Set(visibleNodes.map(node => node.id));
-    nodeLookup.forEach((_node, id) => {
-      if (!visibleIds.has(id)) {
-        nodeLookup.delete(id);
-      }
-    });
-
-    visibleNodes.forEach(node => {
-      const parent = node.parentId ? nodeLookup.get(node.parentId) : null;
-      const radius = getNodeRadiusForDepth(node.depth);
-      const depthRadius = getOrbitRadiusForDepth(node.depth);
-      const localOrbitBase = (parent?.radius ?? 0) + getOrbitRadiusForDepth(1);
-      const orbitRadius = node.parentId ? Math.max(depthRadius, localOrbitBase) : 0;
-      const existing = nodeLookup.get(node.id);
-
-      if (existing) {
-        existing.name = node.name;
-        existing.size = node.size;
-        existing.depth = node.depth;
-        existing.parentId = node.parentId;
-        existing.children = node.children;
-        existing.radius = radius;
-        existing.orbitRadius = orbitRadius;
-        return;
-      }
-
-      const parentX = parent?.x ?? width / 2;
-      const parentY = parent?.y ?? height / 2;
-      const angle = Math.random() * Math.PI * 2;
-      const distance = node.parentId ? orbitRadius || ORBITAL_BASE_RADIUS : 0;
-      const initialX = node.parentId ? parentX + Math.cos(angle) * distance : width / 2;
-      const initialY = node.parentId ? parentY + Math.sin(angle) * distance : height / 2;
-
-      nodeLookup.set(node.id, {
-        ...node,
-        radius,
-        orbitRadius,
-        x: initialX,
-        y: initialY,
-        fx: node.parentId ? null : width / 2,
-        fy: node.parentId ? null : height / 2,
-        vx: 0,
-        vy: 0,
-      });
-    });
-
-    const nodesData = Array.from(nodeLookup.values());
-
-    if (!nodesData.length) {
+    if (nodesData.length === 0) {
       orbitRingGroup.selectAll('*').remove();
       linkGroup.selectAll('*').remove();
       nodeGroup.selectAll('*').remove();
-      simulationRef.current?.stop();
-      simulationRef.current = null;
       return;
     }
 
-    const linkData: OrbitalLink[] = visibleLinks
-      .map(link => {
-        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-        const sourceNode = nodeLookup.get(sourceId);
-        const targetNode = nodeLookup.get(targetId);
+    const nodeLookup = new Map(nodesData.map(node => [node.id, node] as const));
 
-        if (!sourceNode || !targetNode) {
-          return null;
-        }
+    const simulation = forceSimulation<OrbitalSimulationNode>(nodesData)
+      .force(
+        'link',
+        forceLink<OrbitalSimulationNode, OrbitalLink>(linksData)
+          .id(node => node.id)
+          .distance(link => {
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const target = nodeLookup.get(targetId);
+            const depth = target?.depth ?? 1;
+            const orbitRadius = getOrbitRadiusForDepth(depth);
+            return orbitRadius || ORBITAL_BASE_RADIUS;
+          })
+          .strength(0.8),
+      )
+      .force('charge', forceManyBody().strength(-280))
+      .force('center', forceCenter(width / 2, height / 2))
+      .force(
+        'radial',
+        forceRadial<OrbitalSimulationNode>(node => node.orbitRadius, width / 2, height / 2).strength(0.9),
+      )
+      .force('collision', forceCollide<OrbitalSimulationNode>().radius(node => node.radius + 12).strength(0.95))
+      .velocityDecay(0.32);
 
-        return {
-          source: sourceNode,
-          target: targetNode,
-        } as OrbitalLink;
-      })
-      .filter((link): link is OrbitalLink => !!link);
-
-    const getParentCoordinate = (
-      node: OrbitalSimulationNode,
-      axis: 'x' | 'y',
-      fallback: number,
-    ) => {
-      if (!node.parentId) {
-        return fallback;
-      }
-
-      const parent = nodeLookup.get(node.parentId);
-      return parent?.[axis] ?? fallback;
-    };
-
-    let simulation = simulationRef.current;
-
-    if (!simulation) {
-      simulation = forceSimulation<OrbitalSimulationNode>(nodesData)
-        .force(
-          'link',
-          forceLink<OrbitalSimulationNode, OrbitalLink>(linkData)
-            .id(node => node.id)
-            .distance(link => {
-              const targetNode =
-                typeof link.target === 'object'
-                  ? (link.target as OrbitalSimulationNode)
-                  : nodeLookup.get(link.target);
-              const parent = targetNode?.parentId ? nodeLookup.get(targetNode.parentId) : null;
-              const depth = targetNode?.depth ?? 1;
-              const depthRadius = getOrbitRadiusForDepth(depth);
-              const localOrbitBase = (parent?.radius ?? 0) + getOrbitRadiusForDepth(1);
-              return Math.max(depthRadius, localOrbitBase, ORBITAL_BASE_RADIUS);
-            })
-            .strength(0.85),
-        )
-        .force('charge', forceManyBody().strength(-260))
-        .force('center', forceCenter(width / 2, height / 2))
-        .force(
-          'parent-x',
-          forceX<OrbitalSimulationNode>(node => getParentCoordinate(node, 'x', width / 2)).strength(node =>
-            node.parentId ? 0.12 : 0.4,
-          ),
-        )
-        .force(
-          'parent-y',
-          forceY<OrbitalSimulationNode>(node => getParentCoordinate(node, 'y', height / 2)).strength(node =>
-            node.parentId ? 0.12 : 0.4,
-          ),
-        )
-        .force('collision', forceCollide<OrbitalSimulationNode>().radius(node => node.radius + 12).strength(0.95))
-        .force('orbit', createOrbitForce(nodeLookup, node => node.orbitRadius))
-        .velocityDecay(0.28)
-        .alphaDecay(0.055);
-
-      simulationRef.current = simulation;
-    } else {
-      simulation.nodes(nodesData);
-
-      const linkForce = simulation.force<ForceLink<OrbitalSimulationNode, OrbitalLink>>('link');
-      if (linkForce) {
-        linkForce.links(linkData);
-      }
-
-      const parentXForce = simulation.force('parent-x') as ReturnType<typeof forceX> | undefined;
-      const parentYForce = simulation.force('parent-y') as ReturnType<typeof forceY> | undefined;
-
-      if (parentXForce) {
-        parentXForce.x(node => getParentCoordinate(node, 'x', width / 2));
-      }
-
-      if (parentYForce) {
-        parentYForce.y(node => getParentCoordinate(node, 'y', height / 2));
-      }
-
-      simulation.force('center', forceCenter(width / 2, height / 2));
+    if (nodesData.length) {
+      nodesData[0].x = width / 2;
+      nodesData[0].y = height / 2;
     }
 
-    nodesData.forEach(node => {
-      if (node.parentId) {
-        node.fx = null;
-        node.fy = null;
-        return;
-      }
-
-      node.fx = width / 2;
-      node.fy = height / 2;
-    });
-
-    simulation.alpha(0.9).restart();
+    simulation.alpha(1).alphaDecay(0.055);
 
     const ringData = nodesData.filter(node => node.children?.length && expandedNodes.has(node.id));
 
@@ -556,9 +370,19 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       nodeSelection as Selection<SVGGElement, OrbitalSimulationNode, SVGGElement, unknown>,
     );
 
-    mergedNodes.select('circle').attr('r', node => node.radius);
+    mergedNodes.select('circle').each(function (node) {
+      const baseColor = getPaletteColor(colorPaletteId, node.depth);
+      const strokeColor = shiftColor(baseColor, -0.2);
+      select(this)
+        .attr('r', node.radius)
+        .attr('fill', baseColor)
+        .attr('stroke', strokeColor);
+    });
 
-    mergedNodes.select('text').text(node => node.name);
+    mergedNodes
+      .select('text')
+      .text(node => node.name)
+      .attr('fill', node => getReadableTextColor(getPaletteColor(colorPaletteId, node.depth)));
 
     mergedNodes.on('dblclick', (event, node) => {
       event.preventDefault();
@@ -581,11 +405,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       mergedRings
         .attr('cx', node => node.x ?? width / 2)
         .attr('cy', node => node.y ?? height / 2)
-        .attr('r', node => {
-          const depthRadius = getOrbitRadiusForDepth(node.depth + 1);
-          const localOrbitBase = node.radius + getOrbitRadiusForDepth(1);
-          return Math.max(depthRadius, localOrbitBase, ORBITAL_BASE_RADIUS);
-        });
+        .attr('r', node => getOrbitRadiusForDepth(node.depth + 1));
     });
   }, [visibleNodes, visibleLinks, dimensions, expandedNodes]);
 
@@ -594,27 +414,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       simulationRef.current?.stop();
       simulationRef.current = null;
     };
-  }, []);
-
-  useEffect(() => {
-    const nodeGroupElement = nodeGroupRef.current;
-    if (!nodeGroupElement) {
-      return;
-    }
-
-    const nodeSelection = select(nodeGroupElement)
-      .selectAll<SVGGElement, OrbitalSimulationNode>('g.orbital-node');
-
-    nodeSelection.select('circle').each(function (node) {
-      const baseColor = getPaletteColor(colorPaletteId, node.depth);
-      const strokeColor = shiftColor(baseColor, -0.2);
-      select(this).attr('fill', baseColor).attr('stroke', strokeColor);
-    });
-
-    nodeSelection
-      .select('text')
-      .attr('fill', node => getReadableTextColor(getPaletteColor(colorPaletteId, node.depth)));
-  }, [colorPaletteId, visibleNodes]);
+  }, [visibleNodes, visibleLinks, dimensions, expandedNodes, colorPaletteId]);
 
   if (!rootNode) {
     return (
