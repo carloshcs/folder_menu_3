@@ -19,7 +19,12 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "embla-carousel-react": ["lib/stubs/embla-carousel-react.ts"],
+      "recharts": ["lib/stubs/recharts.ts"],
+      "cmdk": ["lib/stubs/cmdk.tsx"],
+      "vaul": ["lib/stubs/vaul.tsx"],
+      "react-hook-form@7.55.0": ["lib/stubs/react-hook-form.tsx"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

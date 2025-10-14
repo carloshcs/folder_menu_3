@@ -1,23 +1,24 @@
 import React, { useMemo } from 'react';
 
 import type { FolderItem } from '../right-sidebar/data';
+import { buildBubbleNodes, type BubbleNode } from '@/lib/mapData';
 
-interface BubbleDatum {
-  id: string;
-  name: string;
-  size: number;
-  depth: number;
-  parentId: string | null;
-}
-
-interface PositionedBubble extends BubbleDatum {
+interface PositionedBubble extends BubbleNode {
   radius: number;
   x: number;
   y: number;
 }
 
+interface BubbleConnection {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
 interface BubbleLayoutResult {
   bubbles: PositionedBubble[];
+  connections: BubbleConnection[];
   width: number;
   height: number;
 }
@@ -35,8 +36,6 @@ const colorPalette = [
   ['#a78bfa', '#6d28d9'],
   ['#f97316', '#b45309']
 ];
-
-const degToRad = (degrees: number) => (degrees * Math.PI) / 180;
 
 const formatSize = (bytes: number): string => {
   if (bytes <= 0) {
@@ -56,46 +55,7 @@ const formatSize = (bytes: number): string => {
   return `${formatted} ${units[unitIndex]}`;
 };
 
-const collectSelectedFolders = (folders: FolderItem[]): BubbleDatum[] => {
-  const result: BubbleDatum[] = [];
-
-  const traverse = (
-    items: FolderItem[],
-    depth: number,
-    parentId: string | null
-  ): number => {
-    let branchTotal = 0;
-
-    items.forEach(item => {
-      if (!item.isSelected) {
-        return;
-      }
-
-      const children = item.children ? [...item.children] : [];
-      const childrenTotal = children.length > 0 ? traverse(children, depth + 1, item.id) : 0;
-
-      const ownSize = typeof item.metrics?.totalSize === 'number' ? item.metrics.totalSize : undefined;
-      const computedSize = ownSize && ownSize > 0 ? ownSize : childrenTotal;
-
-      result.push({
-        id: item.id,
-        name: item.name,
-        size: computedSize,
-        depth,
-        parentId,
-      });
-
-      branchTotal += computedSize;
-    });
-
-    return branchTotal;
-  };
-
-  traverse(folders, 0, null);
-  return result;
-};
-
-const computeRadiusScale = (data: BubbleDatum[]): ((size: number) => number) => {
+const computeRadiusScale = (data: BubbleNode[]): ((size: number) => number) => {
   const sizes = data.map(item => item.size).filter(size => size > 0);
   if (sizes.length === 0) {
     return () => MIN_RADIUS * 0.6;
@@ -117,93 +77,130 @@ const computeRadiusScale = (data: BubbleDatum[]): ((size: number) => number) => 
   };
 };
 
-const placeBubbles = (data: BubbleDatum[]): BubbleLayoutResult => {
-  const sorted = [...data].sort((a, b) => b.size - a.size);
-  const scaleRadius = computeRadiusScale(sorted);
-  const placed: PositionedBubble[] = [];
+interface TreeBubble extends BubbleNode {
+  radius: number;
+  x: number;
+  y: number;
+  children: TreeBubble[];
+}
 
-  sorted.forEach(item => {
-    const radius = scaleRadius(item.size);
+const layoutBubbles = (data: BubbleNode[]): BubbleLayoutResult => {
+  const visible = data.filter(item => item.size > 0 && item.depth > 0);
 
-    if (placed.length === 0) {
-      placed.push({
-        ...item,
-        radius,
-        x: 0,
-        y: 0,
-      });
-      return;
-    }
+  if (visible.length === 0) {
+    return { bubbles: [], connections: [], width: 0, height: 0 };
+  }
 
-    let angle = 0;
-    let distance = radius + placed[0].radius + BUBBLE_SPACING;
-    const angleStep = degToRad(15);
-    const maxIterations = 1000;
-    let iterations = 0;
-    let positionFound = false;
-    let x = 0;
-    let y = 0;
+  const scaleRadius = computeRadiusScale(visible);
+  const nodeMap = new Map<string, TreeBubble>();
 
-    while (!positionFound && iterations < maxIterations) {
-      x = Math.cos(angle) * distance;
-      y = Math.sin(angle) * distance;
-
-      const hasCollision = placed.some(other => {
-        const dx = x - other.x;
-        const dy = y - other.y;
-        const distanceBetween = Math.sqrt(dx * dx + dy * dy);
-        return distanceBetween < radius + other.radius + BUBBLE_SPACING;
-      });
-
-      if (!hasCollision) {
-        positionFound = true;
-        break;
-      }
-
-      angle += angleStep;
-      iterations++;
-
-      if (angle >= Math.PI * 2) {
-        angle -= Math.PI * 2;
-        distance += 12;
-      }
-    }
-
-    if (!positionFound) {
-      const fallbackAngle = (placed.length * angleStep) % (Math.PI * 2);
-      distance += placed.length * 4;
-      x = Math.cos(fallbackAngle) * distance;
-      y = Math.sin(fallbackAngle) * distance;
-    }
-
-    placed.push({
+  visible.forEach(item => {
+    nodeMap.set(item.id, {
       ...item,
-      radius,
-      x,
-      y,
+      radius: scaleRadius(item.size),
+      x: 0,
+      y: 0,
+      children: [],
     });
   });
 
-  if (placed.length === 0) {
-    return { bubbles: [], width: 0, height: 0 };
-  }
+  const roots: TreeBubble[] = [];
 
-  const minX = Math.min(...placed.map(bubble => bubble.x - bubble.radius));
-  const maxX = Math.max(...placed.map(bubble => bubble.x + bubble.radius));
-  const minY = Math.min(...placed.map(bubble => bubble.y - bubble.radius));
-  const maxY = Math.max(...placed.map(bubble => bubble.y + bubble.radius));
+  nodeMap.forEach(node => {
+    if (node.parentId && nodeMap.has(node.parentId)) {
+      nodeMap.get(node.parentId)?.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
 
-  const width = maxX - minX + CONTAINER_PADDING * 2;
-  const height = maxY - minY + CONTAINER_PADDING * 2;
+  const sortBySizeDesc = (a: TreeBubble, b: TreeBubble) => b.size - a.size;
+  roots.sort(sortBySizeDesc);
+  nodeMap.forEach(node => node.children.sort(sortBySizeDesc));
 
-  const normalized = placed.map(bubble => ({
-    ...bubble,
-    x: bubble.x - minX + CONTAINER_PADDING,
-    y: bubble.y - minY + CONTAINER_PADDING,
-  }));
+  const depthSpacing = MAX_RADIUS * 1.5;
+  const horizontalSpacing = MAX_RADIUS + BUBBLE_SPACING * 2;
+
+  let currentX = CONTAINER_PADDING;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  const assignPositions = (node: TreeBubble, depth: number, startX: number): number => {
+    node.y = CONTAINER_PADDING + depth * depthSpacing + node.radius;
+
+    if (node.children.length === 0) {
+      node.x = startX + node.radius;
+
+      minX = Math.min(minX, node.x - node.radius);
+      maxX = Math.max(maxX, node.x + node.radius);
+      maxY = Math.max(maxY, node.y + node.radius);
+
+      return node.x + node.radius + horizontalSpacing;
+    }
+
+    let childStart = startX;
+
+    node.children.forEach(child => {
+      childStart = assignPositions(child, depth + 1, childStart);
+    });
+
+    const firstChild = node.children[0];
+    const lastChild = node.children[node.children.length - 1];
+    const childrenCenter = (firstChild.x + lastChild.x) / 2;
+
+    node.x = childrenCenter;
+
+    minX = Math.min(minX, node.x - node.radius);
+    maxX = Math.max(maxX, node.x + node.radius);
+    maxY = Math.max(maxY, node.y + node.radius);
+
+    return Math.max(childStart, node.x + node.radius + horizontalSpacing);
+  };
+
+  roots.forEach(root => {
+    currentX = assignPositions(root, 0, currentX);
+  });
+
+  const shiftX = Number.isFinite(minX) ? CONTAINER_PADDING - minX : 0;
+
+  nodeMap.forEach(node => {
+    node.x += shiftX;
+  });
+
+  const bubbles: PositionedBubble[] = Array.from(nodeMap.values()).map(({ children, ...bubble }) => bubble);
+  const positionedMap = new Map(bubbles.map(bubble => [bubble.id, bubble]));
+
+  const connections: BubbleConnection[] = [];
+
+  bubbles.forEach(bubble => {
+    if (!bubble.parentId) {
+      return;
+    }
+
+    const parent = positionedMap.get(bubble.parentId);
+    if (!parent) {
+      return;
+    }
+
+    connections.push({
+      fromX: parent.x,
+      fromY: parent.y + parent.radius - 8,
+      toX: bubble.x,
+      toY: bubble.y - bubble.radius + 8,
+    });
+  });
+
+  const width = Number.isFinite(maxX)
+    ? maxX - minX + CONTAINER_PADDING * 2
+    : 0;
+  const height = Number.isFinite(maxY)
+    ? maxY + CONTAINER_PADDING
+    : 0;
 
   return {
-    bubbles: normalized,
+    bubbles,
+    connections,
     width,
     height,
   };
@@ -219,10 +216,8 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
       return { bubbles: [], width: 0, height: 0 };
     }
 
-    const selected = collectSelectedFolders(folders)
-      .filter(item => item.size > 0 && item.parentId !== null);
-
-    return placeBubbles(selected);
+    const bubbleNodes = buildBubbleNodes(folders);
+    return layoutBubbles(bubbleNodes);
   }, [folders]);
 
   if (!layout.bubbles.length) {
@@ -239,6 +234,24 @@ export const BubbleSizeMap: React.FC<BubbleSizeMapProps> = ({ folders }) => {
         className="relative"
         style={{ width: layout.width, height: layout.height }}
       >
+        <svg
+          className="absolute inset-0 pointer-events-none"
+          width={layout.width}
+          height={layout.height}
+        >
+          {layout.connections.map((connection, index) => (
+            <line
+              key={`connection-${index}`}
+              x1={connection.fromX}
+              y1={connection.fromY}
+              x2={connection.toX}
+              y2={connection.toY}
+              stroke="rgba(255,255,255,0.45)"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
         {layout.bubbles.map((bubble, index) => {
           const palette = colorPalette[index % colorPalette.length];
           const gradient = `radial-gradient(circle at 30% 30%, ${palette[0]} 0%, ${palette[1]} 100%)`;

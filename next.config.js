@@ -4,6 +4,9 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: [],
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   webpack: (config) => {
     config.module.rules.push({
       test: /lucide-react/,

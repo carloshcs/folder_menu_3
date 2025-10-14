@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { TopNavigation } from "./components/TopNavigation";
@@ -9,14 +9,8 @@ import { TextToolbar } from "./components/TextToolbar";
 import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
 import { BubbleSizeMap } from "./components/maps-layout";
-
-interface FolderItem {
-  id: string;
-  name: string;
-  isOpen: boolean;
-  isSelected: boolean;
-  children?: FolderItem[];
-}
+import { BoxType } from "@/lib/mapTypes";
+import { FolderItem } from "./components/right-sidebar/data";
 
 interface TextElement {
   id: string;
@@ -34,6 +28,36 @@ interface CommentElement {
   comments: Comment[];
   isExpanded: boolean;
 }
+
+const SIDEBAR_OFFSET = 64;
+const ZOOM_MIN = 25;
+const ZOOM_MAX = 300;
+const ZOOM_BUTTON_STEP = 25;
+const ZOOM_WHEEL_STEP = 10;
+
+const CLOUD_SERVICES = [
+  {
+    id: "notion",
+    name: "Notion",
+    color: "bg-[#000000] text-white",
+    position: { x: 400, y: 300 },
+  },
+  {
+    id: "onedrive",
+    name: "OneDrive",
+    color: "bg-[#0078d4] text-white",
+    position: { x: 800, y: 300 },
+  },
+  {
+    id: "dropbox",
+    name: "Dropbox",
+    color: "bg-[#0061ff] text-white",
+    position: { x: 600, y: 500 },
+  },
+] as const;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 export default function App() {
   const [isDark, setIsDark] = useState(false);
@@ -54,7 +78,7 @@ export default function App() {
   const [isTextMode, setIsTextMode] = useState(false);
   const [isBoxMode, setIsBoxMode] = useState(false);
   const [isCommentMode, setIsCommentMode] = useState(false);
-  const [selectedBoxType, setSelectedBoxType] = useState<string>('box');
+  const [selectedBoxType, setSelectedBoxType] = useState<BoxType>('box');
   const [textElements, setTextElements] = useState<TextElement[]>([]);
   const [commentElements, setCommentElements] = useState<CommentElement[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -65,7 +89,6 @@ export default function App() {
   const [existingMaps, setExistingMaps] = useState(['My Project Map', 'Team Workspace', 'Design System', 'Marketing Campaign']);
   const [selectedLayout, setSelectedLayout] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapContentRef = useRef<HTMLDivElement>(null);
 
   // Check for saved theme preference or default to light mode
   useEffect(() => {
@@ -80,55 +103,66 @@ export default function App() {
     }
   }, []);
 
-  const toggleDarkMode = () => {
-    const newIsDark = !isDark;
-    setIsDark(newIsDark);
+  const toggleDarkMode = useCallback(() => {
+    setIsDark(previous => {
+      const newIsDark = !previous;
 
-    if (newIsDark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
+      if (newIsDark) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("theme", "dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("theme", "light");
+      }
 
-  const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 25, 300));
-  };
+      return newIsDark;
+    });
+  }, []);
 
-  const handleZoomOut = () => {
-    setZoom((prev) => Math.max(prev - 25, 25));
-  };
+  const handleZoomIn = useCallback(() => {
+    setZoom(prev => clamp(prev + ZOOM_BUTTON_STEP, ZOOM_MIN, ZOOM_MAX));
+  }, []);
 
-  const handleCenterMap = () => {
+  const handleZoomOut = useCallback(() => {
+    setZoom(prev => clamp(prev - ZOOM_BUTTON_STEP, ZOOM_MIN, ZOOM_MAX));
+  }, []);
+
+  const handleCenterMap = useCallback(() => {
     setMapPosition({ x: 0, y: 0 });
     setZoom(100);
-  };
+  }, []);
 
-  const toggleGrid = () => {
-    setShowGrid(!showGrid);
-  };
+  const toggleGrid = useCallback(() => {
+    setShowGrid(previous => !previous);
+  }, []);
 
-  const handleGridThicknessChange = (thickness: number) => {
+  const handleGridThicknessChange = useCallback((thickness: number) => {
     setGridThickness(thickness);
-  };
+  }, []);
 
-  const handleFolderDataChange = (folders: FolderItem[]) => {
+  const handleFolderDataChange = useCallback((folders: FolderItem[]) => {
     setFolderData(folders);
-  };
+  }, []);
 
-  const handleLayoutSelect = (layoutId: string) => {
-    setSelectedLayout(previous => (previous === layoutId ? null : layoutId));
+  const clearSelections = useCallback(() => {
+    setSelectedTextId(null);
+    setSelectedCommentId(null);
+  }, []);
+
+  const resetModes = useCallback(() => {
     setIsTextMode(false);
     setIsBoxMode(false);
     setIsCommentMode(false);
-    setSelectedTextId(null);
-    setSelectedCommentId(null);
-  };
+    clearSelections();
+  }, [clearSelections]);
+
+  const handleLayoutSelect = useCallback((layoutId: string) => {
+    setSelectedLayout(previous => (previous === layoutId ? null : layoutId));
+    resetModes();
+  }, [resetModes]);
 
   // Default text format
-  const defaultTextFormat: TextFormat = {
+  const defaultTextFormat: TextFormat = useMemo(() => ({
     fontFamily: 'Arial, Helvetica, sans-serif',
     fontSize: 16,
     textColor: isDark ? '#ffffff' : '#000000',
@@ -144,209 +178,169 @@ export default function App() {
     isUnderline: false,
     textAlign: 'center',
     link: undefined,
-  };
+  }), [isDark]);
 
-  const handleTextModeToggle = () => {
-    setIsTextMode(!isTextMode);
+  const handleTextModeToggle = useCallback(() => {
+    setIsTextMode(previous => !previous);
     setIsBoxMode(false);
     setIsCommentMode(false);
-    setSelectedTextId(null);
-    setSelectedCommentId(null);
-  };
+    clearSelections();
+  }, [clearSelections]);
 
-  const handleCreateBox = (boxType: string) => {
+  const handleCreateBox = useCallback((boxType: BoxType) => {
     setSelectedBoxType(boxType);
     setIsBoxMode(true);
     setIsTextMode(false);
     setIsCommentMode(false);
-    setSelectedTextId(null);
-    setSelectedCommentId(null);
-  };
+    clearSelections();
+  }, [clearSelections]);
 
-  const handleCommentModeToggle = () => {
-    setIsCommentMode(!isCommentMode);
+  const handleCommentModeToggle = useCallback(() => {
+    setIsCommentMode(previous => !previous);
     setIsTextMode(false);
     setIsBoxMode(false);
-    setSelectedTextId(null);
-    setSelectedCommentId(null);
-  };
+    clearSelections();
+  }, [clearSelections]);
 
-  const createTextElement = (clientX: number, clientY: number) => {
-    if (!mapRef.current) return;
-    
+  const toMapCoordinates = useCallback((clientX: number, clientY: number) => {
+    if (!mapRef.current) return null;
+
     const rect = mapRef.current.getBoundingClientRect();
-    // Account for the left sidebar offset (64px)
-    const x = (clientX - rect.left - 64 - mapPosition.x) / (zoom / 100);
+    const x = (clientX - rect.left - SIDEBAR_OFFSET - mapPosition.x) / (zoom / 100);
     const y = (clientY - rect.top - mapPosition.y) / (zoom / 100);
-    
+
+    return { x, y };
+  }, [mapPosition, zoom]);
+
+  const createTextElement = useCallback((clientX: number, clientY: number) => {
+    const coordinates = toMapCoordinates(clientX, clientY);
+    if (!coordinates) return;
+
     const newText: TextElement = {
       id: `text-${Date.now()}`,
-      x: x,
-      y: y,
+      x: coordinates.x,
+      y: coordinates.y,
       text: currentMap, // Default to current map name
       format: defaultTextFormat,
       type: 'text',
     };
-    
+
     setTextElements(prev => [...prev, newText]);
     setSelectedTextId(newText.id);
     setIsTextMode(false);
-  };
+  }, [currentMap, defaultTextFormat, toMapCoordinates]);
 
-  const createCommentElement = (clientX: number, clientY: number) => {
-    if (!mapRef.current) return;
-    
-    const rect = mapRef.current.getBoundingClientRect();
-    // Account for the left sidebar offset (64px)
-    const x = (clientX - rect.left - 64 - mapPosition.x) / (zoom / 100);
-    const y = (clientY - rect.top - mapPosition.y) / (zoom / 100);
-    
+  const createCommentElement = useCallback((clientX: number, clientY: number) => {
+    const coordinates = toMapCoordinates(clientX, clientY);
+    if (!coordinates) return;
+
     const newComment: CommentElement = {
       id: `comment-${Date.now()}`,
-      x: x,
-      y: y,
+      x: coordinates.x,
+      y: coordinates.y,
       comments: [],
       isExpanded: true, // Start expanded so user can add first comment
     };
-    
+
     setCommentElements(prev => [...prev, newComment]);
     setSelectedCommentId(newComment.id);
     setIsCommentMode(false);
-  };
+  }, [toMapCoordinates]);
 
-  const createBoxElement = (clientX: number, clientY: number) => {
-    if (!mapRef.current) return;
-    
-    const rect = mapRef.current.getBoundingClientRect();
-    // Account for the left sidebar offset (64px)
-    const x = (clientX - rect.left - 64 - mapPosition.x) / (zoom / 100);
-    const y = (clientY - rect.top - mapPosition.y) / (zoom / 100);
-    
-    // Set defaults with transparent background and black border for all boxes
-    let boxFormat: TextFormat = {
+  const createBoxElement = useCallback((clientX: number, clientY: number) => {
+    const coordinates = toMapCoordinates(clientX, clientY);
+    if (!coordinates) return;
+
+    const baseBoxFormat: TextFormat = {
       ...defaultTextFormat,
-      boxType: selectedBoxType as any,
-      backgroundColor: 'transparent', // Default transparent for all
+      boxType: selectedBoxType,
+      backgroundColor: 'transparent',
       borderStyle: 'solid',
       borderThickness: 2,
-      borderColor: '#000000', // Default black border for all
+      borderColor: '#000000',
     };
 
-    // Customize defaults for specific box types
-    switch (selectedBoxType) {
-      case 'parallelogram':
-        boxFormat = {
-          ...boxFormat,
-          width: 200,
-          height: 150,
-        };
-        break;
-      case 'postit':
-        boxFormat = {
-          ...boxFormat,
-          backgroundColor: '#fef08a', // Keep yellow for post-it as requested
-          width: 180,
-          height: 120,
-        };
-        break;
-      case 'dialogue':
-        boxFormat = {
-          ...boxFormat,
-          width: 200,
-          height: 100,
-        };
-        break;
-      case 'circle':
-        boxFormat = {
-          ...boxFormat,
-          width: 120,
-          height: 120,
-        };
-        break;
-      case 'rounded':
-        boxFormat = {
-          ...boxFormat,
-          width: 160,
-          height: 100,
-        };
-        break;
-      default:
-        boxFormat = {
-          ...boxFormat,
-          width: 150,
-          height: 100,
-        };
-    }
-    
+    const presets: Record<BoxType, Partial<TextFormat>> = {
+      box: { width: 150, height: 100 },
+      parallelogram: { width: 200, height: 150 },
+      postit: { backgroundColor: '#fef08a', width: 180, height: 120 },
+      dialogue: { width: 200, height: 100 },
+      circle: { width: 120, height: 120 },
+      rounded: { width: 160, height: 100 },
+    };
+
+    const boxFormat = {
+      ...baseBoxFormat,
+      ...(presets[selectedBoxType] ?? presets.box),
+    };
+
     const newBox: TextElement = {
       id: `box-${Date.now()}`,
-      x: x,
-      y: y,
+      x: coordinates.x,
+      y: coordinates.y,
       text: currentMap, // Default to current map name
       format: boxFormat,
       type: 'text',
     };
-    
+
     setTextElements(prev => [...prev, newBox]);
     setSelectedTextId(newBox.id);
     setIsBoxMode(false);
-  };
+  }, [currentMap, defaultTextFormat, selectedBoxType, toMapCoordinates]);
 
-  const handleTextChange = (id: string, text: string) => {
-    setTextElements(prev => 
+  const handleTextChange = useCallback((id: string, text: string) => {
+    setTextElements(prev =>
       prev.map(el => el.id === id ? { ...el, text } : el)
     );
-  };
+  }, []);
 
-  const handleTextPositionChange = (id: string, x: number, y: number) => {
-    setTextElements(prev => 
+  const handleTextPositionChange = useCallback((id: string, x: number, y: number) => {
+    setTextElements(prev =>
       prev.map(el => el.id === id ? { ...el, x, y } : el)
     );
-  };
+  }, []);
 
-  const handleTextFormatChange = (id: string, format: TextFormat) => {
-    setTextElements(prev => 
+  const handleTextFormatChange = useCallback((id: string, format: TextFormat) => {
+    setTextElements(prev =>
       prev.map(el => el.id === id ? { ...el, format } : el)
     );
-  };
+  }, []);
 
-  const handleTextSelect = (id: string) => {
+  const handleTextSelect = useCallback((id: string) => {
     setSelectedTextId(id);
-  };
+  }, []);
 
-  const handleTextDragStart = () => {
+  const handleTextDragStart = useCallback(() => {
     setIsTextDragging(true);
-  };
+  }, []);
 
-  const handleTextDragEnd = () => {
+  const handleTextDragEnd = useCallback(() => {
     setIsTextDragging(false);
-  };
+  }, []);
 
-  const handleTextDelete = (id: string) => {
+  const handleTextDelete = useCallback((id: string) => {
     setTextElements(prev => prev.filter(el => el.id !== id));
-    if (selectedTextId === id) {
-      setSelectedTextId(null);
-    }
-  };
+    setSelectedTextId(previous => (previous === id ? null : previous));
+  }, []);
 
-  const handleCommentPositionChange = (id: string, x: number, y: number) => {
-    setCommentElements(prev => 
+  const handleCommentPositionChange = useCallback((id: string, x: number, y: number) => {
+    setCommentElements(prev =>
       prev.map(el => el.id === id ? { ...el, x, y } : el)
     );
-  };
+  }, []);
 
-  const handleCommentSelect = (id: string) => {
+  const handleCommentSelect = useCallback((id: string) => {
     setSelectedCommentId(id);
     setSelectedTextId(null); // Deselect text when selecting comment
-  };
+  }, []);
 
-  const handleCommentToggleExpand = (id: string) => {
-    setCommentElements(prev => 
+  const handleCommentToggleExpand = useCallback((id: string) => {
+    setCommentElements(prev =>
       prev.map(el => el.id === id ? { ...el, isExpanded: !el.isExpanded } : el)
     );
-  };
+  }, []);
 
-  const handleCommentAdd = (commentId: string, content: string) => {
+  const handleCommentAdd = useCallback((commentId: string, content: string) => {
     const newComment: Comment = {
       id: `comment-${Date.now()}-${Math.random()}`,
       author: 'Carlos Saunders',
@@ -355,79 +349,69 @@ export default function App() {
       timestamp: new Date()
     };
 
-    setCommentElements(prev => 
-      prev.map(el => 
-        el.id === commentId 
+    setCommentElements(prev =>
+      prev.map(el =>
+        el.id === commentId
           ? { ...el, comments: [...el.comments, newComment] }
           : el
       )
     );
-  };
+  }, []);
 
-  const handleCommentDelete = (id: string) => {
-    console.log('handleCommentDelete called with id:', id);
-    console.log('Current comment elements:', commentElements);
-    const newElements = commentElements.filter(el => el.id !== id);
-    console.log('New comment elements after delete:', newElements);
-    setCommentElements(newElements);
-    if (selectedCommentId === id) {
-      setSelectedCommentId(null);
-    }
-  };
+  const handleCommentDelete = useCallback((id: string) => {
+    setCommentElements(prev => prev.filter(el => el.id !== id));
+    setSelectedCommentId(previous => (previous === id ? null : previous));
+  }, []);
 
-  const handleCommentDragStart = () => {
+  const handleCommentDragStart = useCallback(() => {
     setIsCommentDragging(true);
-  };
+  }, []);
 
-  const handleCommentDragEnd = () => {
+  const handleCommentDragEnd = useCallback(() => {
     setIsCommentDragging(false);
-  };
+  }, []);
 
-  const handleMapNameUpdate = (oldName: string, newName: string) => {
+  const handleMapNameUpdate = useCallback((oldName: string, newName: string) => {
     setExistingMaps(prev => prev.map(map => map === oldName ? newName : map));
-    if (currentMap === oldName) {
-      setCurrentMap(newName);
-    }
-  };
+    setCurrentMap(prev => (prev === oldName ? newName : prev));
+  }, []);
 
 
 
   // Handle scroll wheel zoom with cursor focus
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
+  const handleWheel = useCallback((event: React.WheelEvent) => {
+    event.preventDefault();
 
     if (!mapRef.current) return;
 
     const rect = mapRef.current.getBoundingClientRect();
-    // Get cursor position relative to the map (accounting for sidebar offset)
-    const cursorX = e.clientX - rect.left - 64; // Subtract left sidebar width
-    const cursorY = e.clientY - rect.top;
+    const cursorX = event.clientX - rect.left - SIDEBAR_OFFSET;
+    const cursorY = event.clientY - rect.top;
 
-    // Calculate the point in the world coordinates that's under the cursor
-    const worldX = (cursorX - mapPosition.x) / (zoom / 100);
-    const worldY = (cursorY - mapPosition.y) / (zoom / 100);
+    setZoom(previousZoom => {
+      const zoomDelta = event.deltaY < 0 ? ZOOM_WHEEL_STEP : -ZOOM_WHEEL_STEP;
+      const nextZoom = clamp(previousZoom + zoomDelta, ZOOM_MIN, ZOOM_MAX);
 
-    const oldZoom = zoom;
-    let newZoom;
+      if (nextZoom === previousZoom) {
+        return previousZoom;
+      }
 
-    if (e.deltaY < 0) {
-      // Scroll up - zoom in
-      newZoom = Math.min(oldZoom + 10, 300);
-    } else {
-      // Scroll down - zoom out
-      newZoom = Math.max(oldZoom - 10, 25);
-    }
+      setMapPosition(previousPosition => {
+        const worldX = (cursorX - previousPosition.x) / (previousZoom / 100);
+        const worldY = (cursorY - previousPosition.y) / (previousZoom / 100);
 
-    // Calculate the new position to keep the world point under the cursor
-    const newWorldX = worldX * (newZoom / 100);
-    const newWorldY = worldY * (newZoom / 100);
+        const newWorldX = worldX * (nextZoom / 100);
+        const newWorldY = worldY * (nextZoom / 100);
 
-    const newMapX = cursorX - newWorldX;
-    const newMapY = cursorY - newWorldY;
+        return {
+          x: cursorX - newWorldX,
+          y: cursorY - newWorldY,
+        };
+      });
 
-    setZoom(newZoom);
-    setMapPosition({ x: newMapX, y: newMapY });
-  };
+      return nextZoom;
+    });
+  }, []);
 
   // Handle drag functionality - only right-click to avoid conflicts with text box resizing
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -454,13 +438,11 @@ export default function App() {
       setIsDragging(true);
       setDragStart({ x: e.clientX, y: e.clientY });
       setLastDragPosition(mapPosition);
-      setSelectedTextId(null); // Deselect text when clicking map
-      setSelectedCommentId(null); // Deselect comment when clicking map
+      clearSelections();
       e.preventDefault();
     } else if (e.button === 0) {
       // Left click just deselects text and comments, doesn't drag map
-      setSelectedTextId(null);
-      setSelectedCommentId(null);
+      clearSelections();
     }
   };
 
@@ -520,29 +502,91 @@ export default function App() {
       document.removeEventListener("mousemove", handleGlobalMouseMove);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isDragging, dragStart, lastDragPosition, selectedTextId, selectedCommentId]);
+  }, [
+    dragStart,
+    handleCommentDelete,
+    handleTextDelete,
+    isDragging,
+    lastDragPosition,
+    selectedCommentId,
+    selectedTextId,
+  ]);
 
-  // Cloud service mockups
-  const cloudServices = [
-    {
-      id: "notion",
-      name: "Notion",
-      color: "bg-[#000000] text-white",
-      position: { x: 400, y: 300 },
-    },
-    {
-      id: "onedrive",
-      name: "OneDrive",
-      color: "bg-[#0078d4] text-white",
-      position: { x: 800, y: 300 },
-    },
-    {
-      id: "dropbox",
-      name: "Dropbox",
-      color: "bg-[#0061ff] text-white",
-      position: { x: 600, y: 500 },
-    },
-  ];
+  const gridOverlay = useMemo(() => {
+    if (!showGrid || gridThickness <= 0) {
+      return null;
+    }
+
+    const baseGridSize = 50;
+    const zoomFactor = zoom / 100;
+    let gridSize = baseGridSize;
+    let gridOpacity = 0.3;
+
+    if (zoomFactor > 4) {
+      gridSize = baseGridSize / 4;
+      gridOpacity = 0.2;
+    } else if (zoomFactor > 2) {
+      gridSize = baseGridSize / 2;
+      gridOpacity = 0.25;
+    } else if (zoomFactor < 0.3) {
+      gridSize = baseGridSize * 4;
+      gridOpacity = 0.4;
+    } else if (zoomFactor < 0.7) {
+      gridSize = baseGridSize * 2;
+      gridOpacity = 0.35;
+    }
+
+    return (
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          left: "-50000px",
+          top: "-50000px",
+          width: "100000px",
+          height: "100000px",
+          opacity: gridOpacity,
+          backgroundImage: `
+            linear-gradient(to right, var(--border) ${gridThickness}px, transparent ${gridThickness}px),
+            linear-gradient(to bottom, var(--border) ${gridThickness}px, transparent ${gridThickness}px)
+          `,
+          backgroundSize: `${gridSize}px ${gridSize}px`,
+          backgroundPosition: "0px 0px",
+        }}
+      />
+    );
+  }, [gridThickness, showGrid, zoom]);
+
+  const textToolbar = useMemo(() => {
+    if (selectedLayout === 'bubble-size' || !selectedTextId || isTextDragging || isCommentDragging) {
+      return null;
+    }
+
+    const selectedElement = textElements.find(el => el.id === selectedTextId);
+    if (!selectedElement) {
+      return null;
+    }
+
+    return (
+      <TextToolbar
+        x={(selectedElement.x * zoom / 100) + mapPosition.x + SIDEBAR_OFFSET}
+        y={(selectedElement.y * zoom / 100) + mapPosition.y}
+        format={selectedElement.format}
+        onFormatChange={(format) => handleTextFormatChange(selectedTextId, format)}
+        onDelete={() => handleTextDelete(selectedTextId)}
+        zoom={zoom}
+      />
+    );
+  }, [
+    handleTextDelete,
+    handleTextFormatChange,
+    isCommentDragging,
+    isTextDragging,
+    mapPosition,
+    selectedLayout,
+    selectedTextId,
+    textElements,
+    zoom,
+  ]);
 
   return (
     <div className="min-h-screen bg-background transition-colors duration-200 overflow-hidden">
@@ -588,8 +632,8 @@ export default function App() {
           isDragging ? "cursor-grabbing" : "cursor-default"
         }`}
         style={{
-          paddingLeft: "64px", // Left sidebar width (48px + 16px margin)
-          paddingRight: "64px", // Right sidebar width (48px + 16px margin)
+          paddingLeft: `${SIDEBAR_OFFSET}px`, // Left sidebar width (48px + 16px margin)
+          paddingRight: `${SIDEBAR_OFFSET}px`, // Right sidebar width (48px + 16px margin)
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -599,7 +643,6 @@ export default function App() {
       >
         {/* Map Content Container */}
         <div
-          ref={mapContentRef}
           className="relative"
           style={{
             width: "100%",
@@ -608,47 +651,7 @@ export default function App() {
             transformOrigin: "0 0",
           }}
         >
-        {/* Map Background Grid - Only show if enabled and thickness > 0 */}
-        {showGrid && gridThickness > 0 && (() => {
-          // Calculate adaptive grid size based on zoom level
-          const baseGridSize = 50;
-          const zoomFactor = zoom / 100;
-          let gridSize = baseGridSize;
-          let gridOpacity = 0.3;
-
-          if (zoomFactor > 4) {
-            gridSize = baseGridSize / 4;
-            gridOpacity = 0.2;
-          } else if (zoomFactor > 2) {
-            gridSize = baseGridSize / 2;
-            gridOpacity = 0.25;
-          } else if (zoomFactor < 0.3) {
-            gridSize = baseGridSize * 4;
-            gridOpacity = 0.4;
-          } else if (zoomFactor < 0.7) {
-            gridSize = baseGridSize * 2;
-            gridOpacity = 0.35;
-          }
-
-          return (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: "-50000px",
-                top: "-50000px",
-                width: "100000px",
-                height: "100000px",
-                opacity: gridOpacity,
-                backgroundImage: `
-                  linear-gradient(to right, var(--border) ${gridThickness}px, transparent ${gridThickness}px),
-                  linear-gradient(to bottom, var(--border) ${gridThickness}px, transparent ${gridThickness}px)
-                `,
-                backgroundSize: `${gridSize}px ${gridSize}px`,
-                backgroundPosition: "0px 0px",
-              }}
-            />
-          );
-        })()}
+        {gridOverlay}
 
 
           {selectedLayout === 'bubble-size' ? (
@@ -656,7 +659,7 @@ export default function App() {
           ) : (
             <>
               {/* Cloud Service Icons - Fixed size */}
-              {cloudServices.map((service) => (
+              {CLOUD_SERVICES.map((service) => (
                 <div
                   key={service.id}
                   className={`absolute rounded-xl border-2 border-transparent hover:border-white/20 transition-all duration-200 ${service.color} shadow-lg hover:shadow-xl cursor-pointer select-none`}
@@ -721,23 +724,7 @@ export default function App() {
       </div>
 
       {/* Text Toolbar - only show when text is selected and not dragging */}
-      {selectedLayout !== 'bubble-size' && selectedTextId && !isTextDragging && !isCommentDragging && (
-        (() => {
-          const selectedElement = textElements.find(el => el.id === selectedTextId);
-          if (!selectedElement) return null;
-
-          return (
-            <TextToolbar
-              x={(selectedElement.x * zoom / 100) + mapPosition.x + 64} // Add left sidebar offset and apply zoom
-              y={(selectedElement.y * zoom / 100) + mapPosition.y}
-              format={selectedElement.format}
-              onFormatChange={(format) => handleTextFormatChange(selectedTextId, format)}
-              onDelete={() => handleTextDelete(selectedTextId)}
-              zoom={zoom}
-            />
-          );
-        })()
-      )}
+      {textToolbar}
     </div>
   );
 }
