@@ -1,3 +1,5 @@
+import { color as d3Color } from 'd3-color';
+
 export const DEFAULT_MAP_PALETTE = 'blue';
 
 export const MAP_COLOR_PALETTES: Record<string, string[]> = {
@@ -10,95 +12,32 @@ export const MAP_COLOR_PALETTES: Record<string, string[]> = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-interface RGBColor {
-  r: number;
-  g: number;
-  b: number;
-}
-
-const hexToRgb = (hex: string): RGBColor | null => {
-  const normalized = hex.trim().replace(/^#/, '').toLowerCase();
-
-  if (normalized.length === 3) {
-    const r = parseInt(normalized[0] + normalized[0], 16);
-    const g = parseInt(normalized[1] + normalized[1], 16);
-    const b = parseInt(normalized[2] + normalized[2], 16);
-    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
-      return null;
-    }
-    return { r, g, b };
-  }
-
-  if (normalized.length === 6) {
-    const r = parseInt(normalized.slice(0, 2), 16);
-    const g = parseInt(normalized.slice(2, 4), 16);
-    const b = parseInt(normalized.slice(4, 6), 16);
-    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
-      return null;
-    }
-    return { r, g, b };
-  }
-
-  return null;
-};
-
-const rgbStringToRgb = (value: string): RGBColor | null => {
-  const match = value
-    .trim()
-    .match(/^rgba?\((\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([01]?\.\d+|1))?\)$/i);
-
-  if (!match) {
-    return null;
-  }
-
-  const [, rRaw, gRaw, bRaw] = match;
-  const r = Number(rRaw);
-  const g = Number(gRaw);
-  const b = Number(bRaw);
-
-  if ([r, g, b].some(channel => Number.isNaN(channel))) {
-    return null;
-  }
-
-  return {
-    r: clamp(Math.round(r), 0, 255),
-    g: clamp(Math.round(g), 0, 255),
-    b: clamp(Math.round(b), 0, 255),
-  };
-};
-
-const parseColor = (value: string): RGBColor | null =>
-  hexToRgb(value) ?? rgbStringToRgb(value);
-
-const toRgbString = ({ r, g, b }: RGBColor): string =>
-  `rgb(${clamp(Math.round(r), 0, 255)}, ${clamp(Math.round(g), 0, 255)}, ${clamp(Math.round(b), 0, 255)})`;
-
 const mixChannel = (channel: number, target: number, ratio: number) =>
-  channel + (target - channel) * ratio;
+  Math.round(channel + (target - channel) * ratio);
 
-const mixColor = (color: RGBColor, amount: number, targetChannel: number): RGBColor => {
-  const ratio = clamp(Math.abs(amount), 0, 1);
-  const destination = clamp(targetChannel, 0, 255);
-
-  return {
-    r: mixChannel(color.r, destination, ratio),
-    g: mixChannel(color.g, destination, ratio),
-    b: mixChannel(color.b, destination, ratio),
-  };
-};
-
-export const shiftColor = (value: string, amount: number): string => {
-  if (amount === 0) {
-    return value;
+const mixColor = (hex: string, ratio: number, target: number): string => {
+  const parsed = d3Color(hex)?.rgb();
+  if (!parsed) {
+    return hex;
   }
 
-  const parsed = parseColor(value);
-  if (!parsed) {
-    return value;
+  const clampedRatio = clamp(Math.abs(ratio), 0, 1);
+  const destination = clamp(target, 0, 255);
+
+  const r = mixChannel(parsed.r, destination, clampedRatio);
+  const g = mixChannel(parsed.g, destination, clampedRatio);
+  const b = mixChannel(parsed.b, destination, clampedRatio);
+
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+export const shiftColor = (hex: string, amount: number): string => {
+  if (amount === 0) {
+    return hex;
   }
 
   const target = amount > 0 ? 255 : 0;
-  return toRgbString(mixColor(parsed, amount, target));
+  return mixColor(hex, amount, target);
 };
 
 export const getPaletteColors = (paletteId?: string | null): string[] => {
@@ -118,8 +57,8 @@ export const getPaletteColor = (paletteId: string | null | undefined, index: num
   return colors[((index % colors.length) + colors.length) % colors.length];
 };
 
-export const getReadableTextColor = (color: string): string => {
-  const parsed = parseColor(color);
+export const getReadableTextColor = (hex: string): string => {
+  const parsed = d3Color(hex)?.rgb();
   if (!parsed) {
     return '#f8fafc';
   }
