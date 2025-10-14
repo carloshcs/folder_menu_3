@@ -8,6 +8,7 @@ export type ParallelogramProps = {
   fillColor?: string;
   strokeWidth?: number;
   className?: string;
+  style?: React.CSSProperties;
   label?: string;
   fontSize?: number;
   fontFamily?: string;
@@ -26,6 +27,7 @@ export default function Parallelogram({
   fillColor = "#fff",
   strokeWidth = 2,
   className,
+  style,
   label,
   fontSize = 16,
   fontFamily = "Arial, sans-serif",
@@ -40,6 +42,7 @@ export default function Parallelogram({
   return (
     <svg
       className={className}
+      style={style}
       width={w + s}
       height={h}
       viewBox={`0 0 ${w + s} ${h}`}
