@@ -65,7 +65,9 @@ export function EditMapDialog({
     {
       id: 'google-drive',
       name: 'Google Drive',
-      icon: <img src={googleDriveLogo} alt="Google Drive" className="w-6 h-6" />,
+      icon: (
+        <img src={googleDriveLogo.src} alt="Google Drive" className="w-6 h-6" />
+      ),
       isConnected: true,
       selected:
         currentIntegrations.includes('Google Drive') ||
@@ -74,14 +76,14 @@ export function EditMapDialog({
     {
       id: 'notion',
       name: 'Notion',
-      icon: <img src={notionLogo} alt="Notion" className="w-6 h-6" />,
+      icon: <img src={notionLogo.src} alt="Notion" className="w-6 h-6" />,
       isConnected: true,
       selected: currentIntegrations.includes('Notion')
     },
     {
       id: 'onedrive',
       name: 'OneDrive',
-      icon: <img src={oneDriveLogo} alt="OneDrive" className="w-6 h-6" />,
+      icon: <img src={oneDriveLogo.src} alt="OneDrive" className="w-6 h-6" />,
       isConnected: false,
       selected: false
     }

@@ -1,9 +1,20 @@
-import driveDatabase from './drive-database.json';
 import type { FolderItem } from '../data';
 
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 
-type DriveNode = (typeof driveDatabase.nodes)[number];
+export interface DriveNode {
+  id: string;
+  title: string;
+  parent_id: string | null;
+  mimeType: string;
+  fileCount: number;
+  folderCount: number;
+  totalSize: number;
+}
+
+export interface DriveDatabase {
+  nodes: DriveNode[];
+}
 
 type FolderMap = Map<string, FolderItem>;
 
@@ -67,8 +78,8 @@ const buildFolderRelationships = (folderNodes: DriveNode[], folderMap: FolderMap
   return roots;
 };
 
-export const buildGoogleDriveTree = (): FolderItem[] => {
-  const folderNodes = driveDatabase.nodes.filter(isFolderNode);
+export const buildGoogleDriveTree = (database: DriveDatabase): FolderItem[] => {
+  const folderNodes = database.nodes.filter(isFolderNode);
   const folderMap: FolderMap = new Map();
 
   folderNodes.forEach(node => {
