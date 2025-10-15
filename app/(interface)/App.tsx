@@ -9,6 +9,7 @@ import { TextToolbar } from "./components/TextToolbar";
 import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
 import { BubbleSizeMap, OrbitalMap } from "./components/maps-layout";
+import { GridOverlay } from "./components/GridOverlay";
 import { BoxType } from "@/lib/mapTypes";
 import { FolderItem } from "./components/right-sidebar/data";
 
