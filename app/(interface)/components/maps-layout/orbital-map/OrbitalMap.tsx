@@ -246,6 +246,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
 
     node.on('dblclick', function (event, d) {
+      event.preventDefault();
       event.stopPropagation();
       if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
         setExpanded(prev => {
@@ -261,6 +262,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
           return next;
         });
       }
+
+      toggleNodeExpansion(d, setExpanded);
     });
 
     simulation.on('tick', () => {
