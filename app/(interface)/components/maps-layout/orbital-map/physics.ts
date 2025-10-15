@@ -16,7 +16,19 @@ const clamp = (value: number, min: number, max: number) =>
 
 /** Exported so other modules can reuse it */
 export function getNodeId(node: any): string {
-  return node.id ?? node.data?.name ?? Math.random().toString(36).slice(2);
+  if (node.id !== undefined && node.id !== null) {
+    return String(node.id);
+  }
+  if (node.data?.path) {
+    return String(node.data.path);
+  }
+  if (node.data?.id) {
+    return String(node.data.id);
+  }
+  if (node.data?.name) {
+    return String(node.data.name);
+  }
+  return Math.random().toString(36).slice(2);
 }
 
 export function createSimulation(
@@ -26,7 +38,7 @@ export function createSimulation(
 ) {
   const nodeLookup = new Map<string, any>();
 
-  nodes.forEach((node) => {
+  nodes.forEach(node => {
     const id = getNodeId(node);
     node.id = id;
     nodeLookup.set(id, node);
@@ -35,6 +47,13 @@ export function createSimulation(
     if (layoutInfo) {
       node.x = layoutInfo.targetX;
       node.y = layoutInfo.targetY;
+      if (!node.parent || node.depth === 1) {
+        node.fx = layoutInfo.targetX;
+        node.fy = layoutInfo.targetY;
+      } else {
+        node.fx = null;
+        node.fy = null;
+      }
     }
   });
 
