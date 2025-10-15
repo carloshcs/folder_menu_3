@@ -91,34 +91,15 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
 
 const collapseDescendants = (node: any, expanded: Set<string>) => {
   if (!node) return;
-  node.descendants().forEach(descendant => {
-    const key = getNodeKey(descendant);
-    if (key) {
-      expanded.delete(key);
-    }
-  });
-};
-
-const toggleNodeExpansion = (
-  node: any,
-  setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>,
-) => {
-  setExpanded(prevExpanded => {
-    const nextExpanded = new Set(prevExpanded);
-    const nodeKey = getNodeKey(node);
-    if (!nodeKey) {
-      return nextExpanded;
-    }
-
-    const wasExpanded = nextExpanded.delete(nodeKey);
-    if (wasExpanded) {
-      collapseDescendants(node, nextExpanded);
-      return nextExpanded;
-    }
-
-    nextExpanded.add(nodeKey);
-    return nextExpanded;
-  });
+  node
+    .descendants()
+    .filter(descendant => descendant !== node)
+    .forEach(descendant => {
+      const key = getNodeKey(descendant);
+      if (key) {
+        expanded.delete(key);
+      }
+    });
 };
 
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
@@ -267,10 +248,19 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     node.on('dblclick', function (event, d) {
       event.preventDefault();
       event.stopPropagation();
-      const hasChildren =
-        (d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0);
-      if (!hasChildren) {
-        return;
+      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
+        setExpanded(prev => {
+          const next = new Set(prev);
+          const nodeKey = getNodeKey(d);
+          if (!nodeKey) return next;
+          if (next.has(nodeKey)) {
+            next.delete(nodeKey);
+            collapseDescendants(d, next);
+          } else {
+            next.add(nodeKey);
+          }
+          return next;
+        });
       }
 
       toggleNodeExpansion(d, setExpanded);
