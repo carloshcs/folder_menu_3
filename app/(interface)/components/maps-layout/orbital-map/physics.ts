@@ -1,5 +1,6 @@
 import * as d3 from 'd3';
 import { getRadiusByDepth } from './renderUtils';
+import { getExpandableNodeId } from '@/app/(interface)/lib/mapUtils/interactions';
 
 export interface OrbitLayoutInfo {
   targetX: number;
@@ -16,7 +17,11 @@ const clamp = (value: number, min: number, max: number) =>
 
 /** Exported so other modules can reuse it */
 export function getNodeId(node: any): string {
-  return node.id ?? node.data?.name ?? Math.random().toString(36).slice(2);
+  const derivedId = getExpandableNodeId(node);
+  if (derivedId) {
+    return derivedId;
+  }
+  return Math.random().toString(36).slice(2);
 }
 
 export function createSimulation(
@@ -26,7 +31,7 @@ export function createSimulation(
 ) {
   const nodeLookup = new Map<string, any>();
 
-  nodes.forEach((node) => {
+  nodes.forEach(node => {
     const id = getNodeId(node);
     node.id = id;
     nodeLookup.set(id, node);
@@ -35,6 +40,13 @@ export function createSimulation(
     if (layoutInfo) {
       node.x = layoutInfo.targetX;
       node.y = layoutInfo.targetY;
+      if (!node.parent || node.depth === 1) {
+        node.fx = layoutInfo.targetX;
+        node.fy = layoutInfo.targetY;
+      } else {
+        node.fx = null;
+        node.fy = null;
+      }
     }
   });
 

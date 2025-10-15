@@ -10,15 +10,24 @@ export function getFontSizeForRadius(r: number): number {
 
 export function drag(simulation: d3.Simulation<any, undefined>) {
   function dragstarted(event: any, d: any) {
+    if (d.depth !== undefined && d.depth <= 1) {
+      return;
+    }
     if (!event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
     d.fy = d.y;
   }
   function dragged(event: any, d: any) {
+    if (d.depth !== undefined && d.depth <= 1) {
+      return;
+    }
     d.fx = event.x;
     d.fy = event.y;
   }
   function dragended(event: any, d: any) {
+    if (d.depth !== undefined && d.depth <= 1) {
+      return;
+    }
     if (!event.active) simulation.alphaTarget(0);
     d.fx = null;
     d.fy = null;

@@ -4,9 +4,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { buildHierarchy, getVisibleNodesAndLinks } from './dataUtils';
 import { drag } from './renderUtils';
-import { createSimulation, OrbitLayout, OrbitLayoutInfo } from './physics';
+import { createSimulation, OrbitLayout, OrbitLayoutInfo, getNodeId } from './physics';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
+import { handleNodeDoubleClick, type ExpandableNodeLike } from '@/app/(interface)/lib/mapUtils/interactions';
 
 type D3GroupSelection = d3.Selection<SVGGElement, unknown, null, undefined>;
 
@@ -29,15 +30,15 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   const layout: OrbitLayout = new Map<string, OrbitLayoutInfo>();
   const rings: OrbitRing[] = [];
 
-  const getId = (node: any) => node.data?.name ?? node.id;
-
   const assignPositions = (node: any, x: number, y: number) => {
-    const nodeId = getId(node);
+    const nodeId = getNodeId(node);
     const existing = layout.get(nodeId);
     layout.set(nodeId, {
       targetX: x,
       targetY: y,
-      orbitRadius: existing?.orbitRadius ?? (node.parent ? layout.get(getId(node.parent))?.childOrbitRadius ?? 0 : 0),
+      orbitRadius:
+        existing?.orbitRadius ??
+        (node.parent ? layout.get(getNodeId(node.parent))?.childOrbitRadius ?? 0 : 0),
       angle: existing?.angle,
       childOrbitRadius: existing?.childOrbitRadius,
     });
@@ -58,7 +59,7 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
     const angleStep = (2 * Math.PI) / childCount;
     children.forEach((child, index) => {
       const angle = ANGLE_OFFSET + index * angleStep;
-      const childId = getId(child);
+      const childId = getNodeId(child);
       const childX = x + Math.cos(angle) * orbitRadius;
       const childY = y + Math.sin(angle) * orbitRadius;
 
@@ -230,21 +231,15 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
 
     node.on('dblclick', function (event, d) {
+      event.preventDefault();
       event.stopPropagation();
-      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
-        setExpanded(prev => {
-          const next = new Set(prev);
-          const nodeName = d.data?.name;
-          if (!nodeName) return next;
-          if (next.has(nodeName)) {
-            next.delete(nodeName);
-            collapseDescendants(d, next);
-          } else {
-            next.add(nodeName);
-          }
-          return next;
-        });
+      const hasChildren =
+        (d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0);
+      if (!hasChildren) {
+        return;
       }
+
+      handleNodeDoubleClick(d as ExpandableNodeLike, setExpanded);
     });
 
     simulation.on('tick', () => {
