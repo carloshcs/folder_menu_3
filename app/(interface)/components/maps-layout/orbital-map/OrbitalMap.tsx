@@ -106,8 +106,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   }, [folders, size, colorPaletteId, expanded]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 z-10 overflow-visible">
-      <svg ref={svgRef} className="h-full w-full" style={{ overflow: 'visible', display: 'block' }}></svg>
+    <div ref={containerRef} className="relative z-10 w-full h-full">
+      <svg ref={svgRef}></svg>
     </div>
   );
 };

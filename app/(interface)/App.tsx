@@ -505,6 +505,50 @@ export default function App() {
     selectedTextId,
   ]);
 
+  const gridOverlay = useMemo(() => {
+    if (!showGrid || gridThickness <= 0) {
+      return null;
+    }
+
+    const baseGridSize = 50;
+    const zoomFactor = zoom / 100;
+    let gridSize = baseGridSize;
+    let gridOpacity = 0.3;
+
+    if (zoomFactor > 4) {
+      gridSize = baseGridSize / 4;
+      gridOpacity = 0.2;
+    } else if (zoomFactor > 2) {
+      gridSize = baseGridSize / 2;
+      gridOpacity = 0.25;
+    } else if (zoomFactor < 0.3) {
+      gridSize = baseGridSize * 4;
+      gridOpacity = 0.4;
+    } else if (zoomFactor < 0.7) {
+      gridSize = baseGridSize * 2;
+      gridOpacity = 0.35;
+    }
+
+    return (
+      <div
+        className="absolute pointer-events-none -z-10"
+        style={{
+          left: "-50000px",
+          top: "-50000px",
+          width: "100000px",
+          height: "100000px",
+          opacity: gridOpacity,
+          backgroundImage: `
+            linear-gradient(to right, var(--border) ${gridThickness}px, transparent ${gridThickness}px),
+            linear-gradient(to bottom, var(--border) ${gridThickness}px, transparent ${gridThickness}px)
+          `,
+          backgroundSize: `${gridSize}px ${gridSize}px`,
+          backgroundPosition: "0px 0px",
+        }}
+      />
+    );
+  }, [gridThickness, showGrid, zoom]);
+
   const textToolbar = useMemo(() => {
     if (selectedLayout === 'bubble-size' || !selectedTextId || isTextDragging || isCommentDragging) {
       return null;
@@ -592,13 +636,7 @@ export default function App() {
         onContextMenu={(e) => e.preventDefault()} // Disable context menu on right-click
       >
         <div className="relative w-full h-full">
-          <GridOverlay
-            zoom={zoom}
-            camera={mapPosition}
-            thickness={gridThickness}
-            visible={showGrid}
-            darkMode={isDark}
-          />
+          {gridOverlay}
 
           <div
             className="absolute inset-0"
