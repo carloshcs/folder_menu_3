@@ -89,6 +89,11 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 900, height: 700 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const gRef = useRef<D3GroupSelection | null>(null);
+  const orbitLayerRef = useRef<D3GroupSelection | null>(null);
+  const linkLayerRef = useRef<D3GroupSelection | null>(null);
+  const nodeLayerRef = useRef<D3GroupSelection | null>(null);
+  const simulationRef = useRef<d3.Simulation<any, undefined> | null>(null);
 
   // Resize observer
   useEffect(() => {
@@ -108,8 +113,48 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   useEffect(() => {
     if (!svgRef.current) return;
 
-    const svg = d3.select(svgRef.current);
+    const svg = d3.select<SVGSVGElement, unknown>(svgRef.current);
     svg.selectAll('*').remove();
+
+    const g = svg.append('g').attr('class', 'orbital-root');
+    gRef.current = g;
+    orbitLayerRef.current = g.append('g').attr('class', 'orbit-layer');
+    linkLayerRef.current = g.append('g').attr('class', 'link-layer');
+    nodeLayerRef.current = g.append('g').attr('class', 'node-layer');
+
+    const zoomBehavior = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.4, 3])
+      .filter(event => {
+        if (event.type === 'dblclick') return false;
+        if (event.type === 'mousedown' && event.button !== 0) return false;
+        if (event.type === 'wheel' && event.ctrlKey) return false;
+        return true;
+      })
+      .on('zoom', event => {
+        g.attr('transform', event.transform);
+      });
+
+    svg.call(zoomBehavior as any);
+    svg.on('dblclick.zoom', null);
+
+    return () => {
+      svg.on('.zoom', null);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !svgRef.current ||
+      !gRef.current ||
+      !orbitLayerRef.current ||
+      !linkLayerRef.current ||
+      !nodeLayerRef.current
+    ) {
+      return;
+    }
+
+    const svg = d3.select<SVGSVGElement, unknown>(svgRef.current);
     const width = size.width;
     const height = size.height;
 
@@ -190,7 +235,11 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
         });
     });
 
-    return () => simulation.stop();
+    simulation.alpha(1).restart();
+
+    return () => {
+      simulation.stop();
+    };
   }, [folders, size, colorPaletteId, expanded]);
 
   return (
