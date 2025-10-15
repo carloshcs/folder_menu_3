@@ -1,10 +1,5 @@
 import * as d3 from 'd3';
 
-/**
- * Creates a D3 force simulation that keeps Folder Fox in the center,
- * and distributes its 1st-level children (Drive, Dropbox, OneDrive, Notion)
- * evenly spaced around it in orbit.
- */
 export function createSimulation(nodes: any[], links: any[]) {
   const simulation = d3
     .forceSimulation(nodes)
@@ -13,11 +8,14 @@ export function createSimulation(nodes: any[], links: any[]) {
     .force('center', d3.forceCenter(0, 0))
     .alphaDecay(0.05);
 
+  // Track the node currently being dragged
+  let draggingNode: any = null;
+
+  // ---- Custom orbit + decoupling logic ----
   simulation.on('tick.orbit', () => {
     const folderFox = nodes.find(n => n.data?.name === 'Folder Fox');
     if (!folderFox) return;
 
-    // Identify integration nodes (direct children)
     const integrations = nodes.filter(
       n =>
         n.parent === folderFox &&
@@ -26,26 +24,51 @@ export function createSimulation(nodes: any[], links: any[]) {
 
     if (integrations.length === 0) return;
 
-    const RADIUS = 120; // Distance from Folder Fox
+    const RADIUS = 120;
     const angleStep = (2 * Math.PI) / integrations.length;
 
     integrations.forEach((node, i) => {
-      const targetAngle = i * angleStep - Math.PI / 2; // start from top
+      // Skip physics correction if this node is being dragged
+      if (node === draggingNode) return;
+
+      const targetAngle = i * angleStep - Math.PI / 2;
       const targetX = folderFox.x + Math.cos(targetAngle) * RADIUS;
       const targetY = folderFox.y + Math.sin(targetAngle) * RADIUS;
 
-      // Apply spring-like attraction toward orbit position
-      const k = 0.15; // stiffness (controls how strong the orbit force is)
-      const damping = 0.9; // damping factor for smoothness
+      const k = 0.15;
+      const damping = 0.9;
 
       node.vx = (node.vx ?? 0) * damping + (targetX - node.x) * k;
       node.vy = (node.vy ?? 0) * damping + (targetY - node.y) * k;
     });
 
-    // Keep Folder Fox fixed in the center
     folderFox.fx = 0;
     folderFox.fy = 0;
   });
+
+  // ---- Custom drag behavior for secondaries ----
+  const drag = d3
+    .drag()
+    .on('start', (event, d: any) => {
+      draggingNode = d;
+      if (!event.active) simulation.alphaTarget(0.1).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    })
+    .on('drag', (event, d: any) => {
+      d.fx = event.x;
+      d.fy = event.y;
+    })
+    .on('end', (event, d: any) => {
+      draggingNode = null;
+      if (!event.active) simulation.alphaTarget(0);
+      // Allow the node to return to its orbit position naturally
+      d.fx = null;
+      d.fy = null;
+    });
+
+  // Attach drag only to secondary-level nodes
+  simulation.dragBehavior = drag;
 
   return simulation;
 }

@@ -99,7 +99,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders }) => {
     simulationRef.current = simulation;
 
     // Render nodes
-    const node = renderNodes(svg, nodeLayer, visibleNodes).call(drag(simulation) as any);
+    const node = renderNodes(svg, nodeLayer, visibleNodes).call(simulation.dragBehavior as any);
 
     // Expand/collapse
     node.on('dblclick', (event, d) => {
