@@ -5,7 +5,6 @@ import * as d3 from 'd3';
 import { buildHierarchy, getVisibleNodesAndLinks } from './dataUtils';
 import { drag } from './renderUtils';
 import { createSimulation, OrbitLayout, OrbitLayoutInfo } from './physics';
-import { getNodeId } from './nodeId';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
 
@@ -19,14 +18,10 @@ interface OrbitRing {
   node: any;
 }
 
-const BASE_ORBIT_RADIUS = 160;
-const LEVEL_SPACING = 120;
-const DENSITY_PADDING = 26;
-const MAX_DENSITY_PADDING = 180;
+const BASE_ORBIT_RADIUS = 150;
+const LEVEL_SPACING = 110;
 const EXPANSION_MULTIPLIER = 1.18;
 const ANGLE_OFFSET = -Math.PI / 2;
-
-type D3GroupSelection = d3.Selection<SVGGElement, unknown, null, undefined>;
 
 const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   const layout: OrbitLayout = new Map<string, OrbitLayoutInfo>();
@@ -50,12 +45,11 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
 
     const depth = node.depth || 0;
     const childCount = children.length;
-    const baseRadius = BASE_ORBIT_RADIUS + depth * LEVEL_SPACING;
-    const densityBoost = Math.min(MAX_DENSITY_PADDING, Math.max(0, childCount - 1) * DENSITY_PADDING);
-    let orbitRadius = baseRadius + densityBoost;
+    let orbitRadius = BASE_ORBIT_RADIUS + depth * LEVEL_SPACING;
     if (expanded.has(nodeId) || depth === 0) {
       orbitRadius *= EXPANSION_MULTIPLIER;
     }
+    orbitRadius += Math.min(90, childCount * 14);
 
     rings.push({ id: nodeId, node });
 
@@ -164,6 +158,11 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const width = size.width;
     const height = size.height;
 
+    const root = buildHierarchy(folders);
+    const { visibleNodes, visibleLinks } = getVisibleNodesAndLinks(root, expanded);
+
+    const { layout: orbitLayout, rings } = computeOrbitLayout(visibleNodes, expanded);
+
     svg
       .attr('viewBox', [-width / 2, -height / 2, width, height])
       .attr('width', width)
@@ -171,117 +170,69 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       .style('max-width', '100%')
       .style('height', '100%')
       .style('background', 'none')
-      .style('overflow', 'visible');
+      .style('overflow', 'visible')
+      .on('dblclick.zoom', null);
 
-    const root = buildHierarchy(folders);
-    const { visibleNodes, visibleLinks } = getVisibleNodesAndLinks(root, expanded);
+    const g = svg.append('g');
+    svg.call(d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 3]).on('zoom', e => g.attr('transform', e.transform)));
 
-    const { layout: orbitLayout, rings } = computeOrbitLayout(visibleNodes, expanded);
-
-    const orbitSelection = orbitLayerRef.current
-      .selectAll<SVGCircleElement, OrbitRing>('circle.orbit-ring')
+    const orbitGroup = g.append('g').attr('class', 'orbits');
+    const orbit = orbitGroup
+      .selectAll('circle')
       .data(rings, d => d.id)
-      .join(
-        enter =>
-          enter
-            .append('circle')
-            .attr('class', 'orbit-ring')
-            .attr('fill', 'none')
-            .attr('stroke', 'rgba(180,180,180,0.18)')
-            .attr('stroke-dasharray', '6,6')
-            .attr('stroke-width', 1.4)
-            .attr('opacity', 0)
-            .attr('r', 0)
-            .call(sel =>
-              sel
-                .transition()
-                .duration(260)
-                .attr('opacity', 1),
-            ),
-        update => update,
-        exit =>
-          exit.call(sel =>
+      .join(enter =>
+        enter
+          .append('circle')
+          .attr('fill', 'none')
+          .attr('stroke', 'rgba(180,180,180,0.18)')
+          .attr('stroke-dasharray', '6,6')
+          .attr('stroke-width', 1.4)
+          .attr('opacity', 0)
+          .call(sel =>
             sel
               .transition()
-              .duration(200)
-              .attr('opacity', 0)
-              .attr('r', 0)
-              .remove(),
-          ),
-      )
-      .attr('cx', d => ((d.node as any).x as number) ?? 0)
-      .attr('cy', d => ((d.node as any).y as number) ?? 0);
-
-    orbitSelection
-      .transition()
-      .duration(280)
-      .attr('r', d => orbitLayout.get(d.id)?.childOrbitRadius ?? 0);
-
-    const linkSelection = linkLayerRef.current
-      .selectAll<SVGLineElement, any>('line.orbit-link')
-      .data(visibleLinks, d => `${getNodeId(d.source)}-${getNodeId(d.target)}`)
-      .join(
-        enter =>
-          enter
-            .append('line')
-            .attr('class', 'orbit-link')
-            .attr('stroke', 'rgba(200,200,200,0.25)')
-            .attr('stroke-width', 1.2)
-            .attr('opacity', 0)
-            .call(sel =>
-              sel
-                .transition()
-                .duration(200)
-                .attr('opacity', 1),
-            ),
-        update => update.attr('stroke', 'rgba(200,200,200,0.25)').attr('stroke-width', 1.2),
-        exit =>
-          exit.call(sel =>
-            sel
-              .transition()
-              .duration(160)
-              .attr('opacity', 0)
-              .remove(),
+              .duration(300)
+              .attr('opacity', 1),
           ),
       );
 
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
-
     const simulation = createSimulation(visibleNodes, visibleLinks, orbitLayout);
-    simulationRef.current = simulation;
 
-    const nodeSelection = renderNodes(svg, nodeLayerRef.current, visibleNodes, colorPaletteId)
-      .on('dblclick', (event: any, d: any) => {
-        event.stopPropagation();
-        event.preventDefault();
-        if (d.children && d.children.length > 0) {
-          setExpanded(prev => {
-            const next = new Set(prev);
-            if (next.has(d.data.name)) {
-              next.delete(d.data.name);
-            } else {
-              next.add(d.data.name);
-            }
-            return next;
-          });
-        }
-      })
-      .call(drag(simulation) as any);
+    const link = g
+      .append('g')
+      .attr('stroke', 'rgba(200,200,200,0.25)')
+      .attr('stroke-width', 1.2)
+      .selectAll('line')
+      .data(visibleLinks)
+      .join('line');
+
+    const node = renderNodes(svg, g, visibleNodes, colorPaletteId).call(drag(simulation) as any);
+
+    node.on('dblclick', function (event, d) {
+      event.stopPropagation();
+      if (d.children && d.children.length > 0) {
+        const newSet = new Set(expanded);
+        if (newSet.has(d.data.name)) newSet.delete(d.data.name);
+        else newSet.add(d.data.name);
+        setExpanded(newSet);
+      }
+    });
 
     simulation.on('tick', () => {
-      linkSelection
-        .attr('x1', d => ((d.source as any).x as number) ?? 0)
-        .attr('y1', d => ((d.source as any).y as number) ?? 0)
-        .attr('x2', d => ((d.target as any).x as number) ?? 0)
-        .attr('y2', d => ((d.target as any).y as number) ?? 0);
+      link
+        .attr('x1', d => (d.source as any).x)
+        .attr('y1', d => (d.source as any).y)
+        .attr('x2', d => (d.target as any).x)
+        .attr('y2', d => (d.target as any).y);
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
 
-      nodeSelection.attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
-
-      orbitSelection
-        .attr('cx', d => ((d.node as any).x as number) ?? 0)
-        .attr('cy', d => ((d.node as any).y as number) ?? 0);
+      orbit
+        .attr('cx', d => (d.node as any).x)
+        .attr('cy', d => (d.node as any).y)
+        .attr('r', d => {
+          const layoutInfo = orbitLayout.get(d.id);
+          return layoutInfo?.childOrbitRadius ?? 0;
+        });
     });
 
     simulation.alpha(1).restart();
