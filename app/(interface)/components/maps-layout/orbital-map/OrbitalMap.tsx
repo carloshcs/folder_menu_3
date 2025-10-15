@@ -8,6 +8,8 @@ import { createSimulation, OrbitLayout, OrbitLayoutInfo } from './physics';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
 
+type D3GroupSelection = d3.Selection<SVGGElement, unknown, null, undefined>;
+
 interface OrbitalMapProps {
   folders: FolderItem[];
   colorPaletteId?: string;
@@ -173,48 +175,82 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
       .style('overflow', 'visible')
       .on('dblclick.zoom', null);
 
-    const g = svg.append('g');
-    svg.call(d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 3]).on('zoom', e => g.attr('transform', e.transform)));
+    const orbitLayer = orbitLayerRef.current!;
+    const linkLayer = linkLayerRef.current!;
+    const nodeLayer = nodeLayerRef.current!;
 
-    const orbitGroup = g.append('g').attr('class', 'orbits');
-    const orbit = orbitGroup
-      .selectAll('circle')
+    const orbit = orbitLayer
+      .selectAll<SVGCircleElement, OrbitRing>('circle')
       .data(rings, d => d.id)
-      .join(enter =>
-        enter
-          .append('circle')
-          .attr('fill', 'none')
-          .attr('stroke', 'rgba(180,180,180,0.18)')
-          .attr('stroke-dasharray', '6,6')
-          .attr('stroke-width', 1.4)
-          .attr('opacity', 0)
-          .call(sel =>
+      .join(
+        enter =>
+          enter
+            .append('circle')
+            .attr('fill', 'none')
+            .attr('stroke', 'rgba(180,180,180,0.18)')
+            .attr('stroke-dasharray', '6,6')
+            .attr('stroke-width', 1.4)
+            .attr('opacity', 0)
+            .call(sel =>
+              sel
+                .transition()
+                .duration(300)
+                .attr('opacity', 1),
+            ),
+        update => update,
+        exit =>
+          exit.call(sel =>
             sel
               .transition()
-              .duration(300)
-              .attr('opacity', 1),
+              .duration(200)
+              .attr('opacity', 0)
+              .remove(),
           ),
       );
 
+    const link = linkLayer
+      .selectAll<SVGLineElement, any>('line')
+      .data(visibleLinks, d => `${(d.source as any).data?.name ?? (d.source as any).id}-${(d.target as any).data?.name ?? (d.target as any).id}`)
+      .join(
+        enter =>
+          enter
+            .append('line')
+            .attr('stroke', 'rgba(200,200,200,0.25)')
+            .attr('stroke-width', 1.2),
+        update => update,
+        exit => exit.remove(),
+      );
+
+    if (simulationRef.current) {
+      simulationRef.current.stop();
+    }
     const simulation = createSimulation(visibleNodes, visibleLinks, orbitLayout);
+    simulationRef.current = simulation;
 
-    const link = g
-      .append('g')
-      .attr('stroke', 'rgba(200,200,200,0.25)')
-      .attr('stroke-width', 1.2)
-      .selectAll('line')
-      .data(visibleLinks)
-      .join('line');
+    const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
 
-    const node = renderNodes(svg, g, visibleNodes, colorPaletteId).call(drag(simulation) as any);
+    const collapseDescendants = (target: any, state: Set<string>) => {
+      target.descendants?.().forEach((desc: any) => {
+        if (desc === target) return;
+        state.delete(desc.data?.name);
+      });
+    };
 
     node.on('dblclick', function (event, d) {
       event.stopPropagation();
-      if (d.children && d.children.length > 0) {
-        const newSet = new Set(expanded);
-        if (newSet.has(d.data.name)) newSet.delete(d.data.name);
-        else newSet.add(d.data.name);
-        setExpanded(newSet);
+      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
+        setExpanded(prev => {
+          const next = new Set(prev);
+          const nodeName = d.data?.name;
+          if (!nodeName) return next;
+          if (next.has(nodeName)) {
+            next.delete(nodeName);
+            collapseDescendants(d, next);
+          } else {
+            next.add(nodeName);
+          }
+          return next;
+        });
       }
     });
 
