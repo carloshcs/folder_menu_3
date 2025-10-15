@@ -16,26 +16,22 @@ export type OrbitLayout = Map<string, OrbitLayoutInfo>;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-export function getNodeId(node: any) {
+function getNodeId(node: any) {
   return node.id ?? node.data?.name ?? Math.random().toString(36).slice(2);
 }
 
 export function createSimulation(nodes: any[], links: any[], layout: OrbitLayout) {
+  const nodeLookup = new Map<string, any>();
+
   nodes.forEach(node => {
     const id = getNodeId(node);
     node.id = id;
+    nodeLookup.set(id, node);
 
     const layoutInfo = layout.get(id);
     if (layoutInfo) {
       node.x = layoutInfo.targetX;
       node.y = layoutInfo.targetY;
-      if (!node.parent || (node.depth ?? 0) <= 1) {
-        node.fx = layoutInfo.targetX;
-        node.fy = layoutInfo.targetY;
-      } else {
-        node.fx = null;
-        node.fy = null;
-      }
     }
   });
 
@@ -57,12 +53,12 @@ export function createSimulation(nodes: any[], links: any[], layout: OrbitLayout
   const chargeForce = d3
     .forceManyBody()
     .strength(node => {
-      if (!node.parent) return -260;
+      if (!node.parent) return -280;
       const parentId = getNodeId(node.parent);
       const parentLayout = layout.get(parentId);
       const orbit = parentLayout?.childOrbitRadius ?? 180;
       // Stronger separation between clusters, softer inside each orbit
-      return -clamp(orbit * 0.5, 70, 300);
+      return -clamp(orbit * 0.55, 60, 320);
     });
 
   const collisionForce = d3
@@ -77,7 +73,7 @@ export function createSimulation(nodes: any[], links: any[], layout: OrbitLayout
       const layoutInfo = layout.get(id);
       if (!layoutInfo) return;
 
-      const k = 0.2;
+      const k = 0.18;
       node.vx += (layoutInfo.targetX - (node.x ?? 0)) * k;
       node.vy += (layoutInfo.targetY - (node.y ?? 0)) * k;
 
@@ -90,7 +86,7 @@ export function createSimulation(nodes: any[], links: any[], layout: OrbitLayout
           const dy = (node.y ?? 0) - parentLayout.targetY;
           const distance = Math.sqrt(dx * dx + dy * dy) || 1;
           const delta = distance - desiredRadius;
-          const radialStrength = 0.24;
+          const radialStrength = 0.22;
           node.vx -= ((dx / distance) * delta) * radialStrength;
           node.vy -= ((dy / distance) * delta) * radialStrength;
         }
