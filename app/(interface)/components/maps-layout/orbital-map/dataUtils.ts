@@ -1,18 +1,39 @@
 import type { FolderItem } from '../../right-sidebar/data';
 import * as d3 from 'd3';
 
-export function mapFolderToHierarchy(folder: FolderItem): any {
-  const children = folder.children ? folder.children.map(mapFolderToHierarchy) : [];
-  return { name: folder.name, children };
+interface HierarchyFolder {
+  id: string;
+  name: string;
+  path: string;
+  children: HierarchyFolder[];
+}
+
+const buildPath = (parentPath: string, name: string) =>
+  parentPath ? `${parentPath}/${name}` : name;
+
+export function mapFolderToHierarchy(folder: FolderItem, parentPath = ''): HierarchyFolder {
+  const path = buildPath(parentPath, folder.name);
+  const children = folder.children
+    ? folder.children.map(child => mapFolderToHierarchy(child, path))
+    : [];
+
+  return {
+    id: folder.id,
+    name: folder.name,
+    path,
+    children,
+  };
 }
 
 export function buildHierarchy(folders: FolderItem[]) {
   const integrations = ['Google Drive', 'Dropbox', 'OneDrive', 'Notion'];
-  const folderFox = {
+  const folderFox: HierarchyFolder = {
+    id: 'folder-fox',
     name: 'Folder Fox',
+    path: 'Folder Fox',
     children: folders.filter(f => integrations.includes(f.name)).map(mapFolderToHierarchy),
   };
-  return d3.hierarchy(folderFox);
+  return d3.hierarchy<HierarchyFolder>(folderFox);
 }
 
 export function getVisibleNodesAndLinks(root: d3.HierarchyNode<any>, expanded: Set<string>) {
@@ -23,7 +44,9 @@ export function getVisibleNodesAndLinks(root: d3.HierarchyNode<any>, expanded: S
     if (d.depth <= 1) return true; // root + integrations
     const parent = d.parent;
     if (!parent) return false;
-    return expanded.has(parent.data.name);
+    const parentKey = parent.data?.path ?? parent.data?.id ?? parent.data?.name;
+    if (!parentKey) return false;
+    return expanded.has(parentKey);
   });
 
   const visibleLinks = allLinks.filter(

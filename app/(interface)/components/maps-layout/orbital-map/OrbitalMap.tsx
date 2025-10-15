@@ -25,19 +25,22 @@ const LEVEL_SPACING = 110;
 const EXPANSION_MULTIPLIER = 1.18;
 const ANGLE_OFFSET = -Math.PI / 2;
 
+const getNodeKey = (node: any) =>
+  node.data?.path ?? node.data?.id ?? node.data?.name ?? node.id;
+
 const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   const layout: OrbitLayout = new Map<string, OrbitLayoutInfo>();
   const rings: OrbitRing[] = [];
 
-  const getId = (node: any) => node.data?.name ?? node.id;
-
   const assignPositions = (node: any, x: number, y: number) => {
-    const nodeId = getId(node);
+    const nodeId = getNodeKey(node);
     const existing = layout.get(nodeId);
     layout.set(nodeId, {
       targetX: x,
       targetY: y,
-      orbitRadius: existing?.orbitRadius ?? (node.parent ? layout.get(getId(node.parent))?.childOrbitRadius ?? 0 : 0),
+      orbitRadius:
+        existing?.orbitRadius ??
+        (node.parent ? layout.get(getNodeKey(node.parent))?.childOrbitRadius ?? 0 : 0),
       angle: existing?.angle,
       childOrbitRadius: existing?.childOrbitRadius,
     });
@@ -58,7 +61,7 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
     const angleStep = (2 * Math.PI) / childCount;
     children.forEach((child, index) => {
       const angle = ANGLE_OFFSET + index * angleStep;
-      const childId = getId(child);
+      const childId = getNodeKey(child);
       const childX = x + Math.cos(angle) * orbitRadius;
       const childY = y + Math.sin(angle) * orbitRadius;
 
@@ -84,6 +87,38 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   }
 
   return { layout, rings };
+};
+
+const collapseDescendants = (node: any, expanded: Set<string>) => {
+  if (!node) return;
+  node.descendants().forEach(descendant => {
+    const key = getNodeKey(descendant);
+    if (key) {
+      expanded.delete(key);
+    }
+  });
+};
+
+const toggleNodeExpansion = (
+  node: any,
+  setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>,
+) => {
+  setExpanded(prevExpanded => {
+    const nextExpanded = new Set(prevExpanded);
+    const nodeKey = getNodeKey(node);
+    if (!nodeKey) {
+      return nextExpanded;
+    }
+
+    const wasExpanded = nextExpanded.delete(nodeKey);
+    if (wasExpanded) {
+      collapseDescendants(node, nextExpanded);
+      return nextExpanded;
+    }
+
+    nextExpanded.add(nodeKey);
+    return nextExpanded;
+  });
 };
 
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
@@ -230,21 +265,15 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
 
     node.on('dblclick', function (event, d) {
+      event.preventDefault();
       event.stopPropagation();
-      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
-        setExpanded(prev => {
-          const next = new Set(prev);
-          const nodeName = d.data?.name;
-          if (!nodeName) return next;
-          if (next.has(nodeName)) {
-            next.delete(nodeName);
-            collapseDescendants(d, next);
-          } else {
-            next.add(nodeName);
-          }
-          return next;
-        });
+      const hasChildren =
+        (d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0);
+      if (!hasChildren) {
+        return;
       }
+
+      toggleNodeExpansion(d, setExpanded);
     });
 
     simulation.on('tick', () => {
