@@ -231,11 +231,19 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     node.on('dblclick', function (event, d) {
       event.stopPropagation();
-      if (d.children && d.children.length > 0) {
-        const newSet = new Set(expanded);
-        if (newSet.has(d.data.name)) newSet.delete(d.data.name);
-        else newSet.add(d.data.name);
-        setExpanded(newSet);
+      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
+        setExpanded(prev => {
+          const next = new Set(prev);
+          const nodeName = d.data?.name;
+          if (!nodeName) return next;
+          if (next.has(nodeName)) {
+            next.delete(nodeName);
+            collapseDescendants(d, next);
+          } else {
+            next.add(nodeName);
+          }
+          return next;
+        });
       }
     });
 
