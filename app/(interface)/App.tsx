@@ -622,7 +622,7 @@ export default function App() {
       <div
         ref={mapRef}
         className={`fixed inset-0 overflow-hidden ${
-          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" : 
+          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" :
           isDragging ? "cursor-grabbing" : "cursor-default"
         }`}
         style={{
@@ -634,67 +634,67 @@ export default function App() {
         onMouseUp={handleMouseUp}
         onContextMenu={(e) => e.preventDefault()} // Disable context menu on right-click
       >
-        {/* Map Content Container */}
-        <div
-          className="relative"
-          style={{
-            width: "100%",
-            height: "100%",
-            transform: `translate(${mapPosition.x}px, ${mapPosition.y}px) scale(${zoom / 100})`,
-            transformOrigin: "0 0",
-          }}
-        >
+        <div className="relative w-full h-full">
           {gridOverlay}
 
+          <div
+            className="absolute inset-0"
+            style={{
+              transform: `translate(${mapPosition.x}px, ${mapPosition.y}px) scale(${zoom / 100})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            <div className="relative w-full h-full">
+              {selectedLayout === 'bubble-size' ? (
+                <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              ) : selectedLayout === 'orbital' ? (
+                <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              ) : (
+                <>
+                  {/* Text Elements */}
+                  {textElements.map(textElement => (
+                    <TextBox
+                      key={textElement.id}
+                      id={textElement.id}
+                      x={textElement.x}
+                      y={textElement.y}
+                      text={textElement.text}
+                      format={textElement.format}
+                      isSelected={selectedTextId === textElement.id}
+                      zoom={zoom}
+                      onTextChange={handleTextChange}
+                      onPositionChange={handleTextPositionChange}
+                      onFormatChange={handleTextFormatChange}
+                      onSelect={handleTextSelect}
+                      onDragStart={handleTextDragStart}
+                      onDragEnd={handleTextDragEnd}
+                    />
+                  ))}
 
-            {selectedLayout === 'bubble-size' ? (
-              <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
-            ) : selectedLayout === 'orbital' ? (
-              <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
-            ) : (
-              <>
-                {/* Text Elements */}
-              {textElements.map((textElement) => (
-                <TextBox
-                  key={textElement.id}
-                  id={textElement.id}
-                  x={textElement.x}
-                  y={textElement.y}
-                  text={textElement.text}
-                  format={textElement.format}
-                  isSelected={selectedTextId === textElement.id}
-                  zoom={zoom}
-                  onTextChange={handleTextChange}
-                  onPositionChange={handleTextPositionChange}
-                  onFormatChange={handleTextFormatChange}
-                  onSelect={handleTextSelect}
-                  onDragStart={handleTextDragStart}
-                  onDragEnd={handleTextDragEnd}
-                />
-              ))}
-
-              {/* Comment Elements */}
-              {commentElements.map((commentElement) => (
-                <CommentBox
-                  key={commentElement.id}
-                  id={commentElement.id}
-                  x={commentElement.x}
-                  y={commentElement.y}
-                  comments={commentElement.comments}
-                  isSelected={selectedCommentId === commentElement.id}
-                  isExpanded={commentElement.isExpanded}
-                  zoom={zoom}
-                  onPositionChange={handleCommentPositionChange}
-                  onSelect={handleCommentSelect}
-                  onToggleExpand={handleCommentToggleExpand}
-                  onAddComment={handleCommentAdd}
-                  onDelete={handleCommentDelete}
-                  onDragStart={handleCommentDragStart}
-                  onDragEnd={handleCommentDragEnd}
-                />
-              ))}
-            </>
-          )}
+                  {/* Comment Elements */}
+                  {commentElements.map(commentElement => (
+                    <CommentBox
+                      key={commentElement.id}
+                      id={commentElement.id}
+                      x={commentElement.x}
+                      y={commentElement.y}
+                      comments={commentElement.comments}
+                      isSelected={selectedCommentId === commentElement.id}
+                      isExpanded={commentElement.isExpanded}
+                      zoom={zoom}
+                      onPositionChange={handleCommentPositionChange}
+                      onSelect={handleCommentSelect}
+                      onToggleExpand={handleCommentToggleExpand}
+                      onAddComment={handleCommentAdd}
+                      onDelete={handleCommentDelete}
+                      onDragStart={handleCommentDragStart}
+                      onDragEnd={handleCommentDragEnd}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
