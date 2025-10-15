@@ -101,7 +101,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   }, [folders, size, colorPaletteId, expanded]);
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="relative z-10 w-full h-full">
       <svg ref={svgRef}></svg>
     </div>
   );
