@@ -229,13 +229,6 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
 
-    const collapseDescendants = (target: any, state: Set<string>) => {
-      target.descendants?.().forEach((desc: any) => {
-        if (desc === target) return;
-        state.delete(desc.data?.name);
-      });
-    };
-
     node.on('dblclick', function (event, d) {
       event.stopPropagation();
       if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
