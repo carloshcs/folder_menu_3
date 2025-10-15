@@ -1,103 +1,109 @@
 import * as d3 from 'd3';
 import { getRadiusByDepth } from './renderUtils';
 
-/**
- * Structured orbital physics — each parent defines its own angular zone.
- */
-export function createSimulation(nodes: any[], links: any[], orbitRadiusStep: number) {
-  const angleMap = new Map<string, number>();
-  const zoneMap = new Map<string, [number, number]>(); // angular limits per node
+export interface OrbitLayoutInfo {
+  targetX: number;
+  targetY: number;
+  /** Radius of the orbit this node sits on relative to its parent */
+  orbitRadius: number;
+  /** Angle relative to parent, in radians */
+  angle?: number;
+  /** Radius used by this node's children */
+  childOrbitRadius?: number;
+}
 
-  // Get top-level branches (depth=1)
-  const topBranches = nodes.filter(n => n.depth === 1);
-  const zoneWidth = (2 * Math.PI) / topBranches.length;
+export type OrbitLayout = Map<string, OrbitLayoutInfo>;
 
-  // Assign angular zones for top branches
-  topBranches.forEach((branch, i) => {
-    const start = i * zoneWidth;
-    const end = (i + 1) * zoneWidth;
-    zoneMap.set(branch.id, [start, end]);
-    angleMap.set(branch.id, (start + end) / 2);
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+function getNodeId(node: any) {
+  return node.id ?? node.data?.name ?? Math.random().toString(36).slice(2);
+}
+
+export function createSimulation(nodes: any[], links: any[], layout: OrbitLayout) {
+  const nodeLookup = new Map<string, any>();
+
+  nodes.forEach(node => {
+    const id = getNodeId(node);
+    node.id = id;
+    nodeLookup.set(id, node);
+
+    const layoutInfo = layout.get(id);
+    if (layoutInfo) {
+      node.x = layoutInfo.targetX;
+      node.y = layoutInfo.targetY;
+    }
   });
 
-  // Assign children recursively inside parent's zone
-  const assignAngles = (node: any) => {
-    const [start, end] = zoneMap.get(node.id) || zoneMap.get(node.parent?.id) || [0, 2 * Math.PI];
-    const children = node.children || [];
-    if (!children.length) return;
-
-    const spread = (end - start) * 0.6; // inner spread for children
-    const center = (start + end) / 2;
-    const step = spread / (Math.max(children.length - 1, 1));
-
-    children.forEach((child: any, i: number) => {
-      const angle = center - spread / 2 + i * step;
-      angleMap.set(child.id, angle);
-      const childStart = angle - step / 2;
-      const childEnd = angle + step / 2;
-      zoneMap.set(child.id, [childStart, childEnd]);
-      assignAngles(child);
-    });
-  };
-
-  nodes.filter(n => n.depth === 1).forEach(assignAngles);
-
-  // Compute orbit radius per depth
-  const getOrbitRadius = (depth: number) => orbitRadiusStep * 0.6 * depth;
-
-  // Initialize positions
-  nodes.forEach((d: any) => {
-    const angle = angleMap.get(d.id) ?? Math.random() * 2 * Math.PI;
-    const radius = getOrbitRadius(d.depth || 1);
-    d.x = (d.parent?.x ?? 0) + radius * Math.cos(angle);
-    d.y = (d.parent?.y ?? 0) + radius * Math.sin(angle);
-  });
-
-  // Force setup
   const linkForce = d3
     .forceLink(links)
-    .id((d: any) => d.id)
-    .distance(d => getOrbitRadius(d.target.depth) * 0.7)
-    .strength(1);
+    .id((d: any) => getNodeId(d))
+    .distance(link => {
+      const targetNode = link.target as any;
+      const targetId = getNodeId(targetNode);
+      const targetLayout = layout.get(targetId);
+      const defaultDistance = 140;
+      return clamp((targetLayout?.orbitRadius ?? defaultDistance) * 0.9, 80, 400);
+    })
+    .strength(link => {
+      const depth = (link.target as any).depth || 1;
+      return clamp(0.55 / depth, 0.08, 0.45);
+    });
 
-  const simulation = d3
-    .forceSimulation(nodes)
-    .force('link', linkForce)
-    .force('charge', d3.forceManyBody().strength(-20))
-    .force('collision', d3.forceCollide().radius(d => getRadiusByDepth(d.depth) + 4))
-    .force('center', d3.forceCenter(0, 0))
-    .alphaDecay(0.05);
+  const chargeForce = d3
+    .forceManyBody()
+    .strength(node => {
+      if (!node.parent) return -280;
+      const parentId = getNodeId(node.parent);
+      const parentLayout = layout.get(parentId);
+      const orbit = parentLayout?.childOrbitRadius ?? 180;
+      // Stronger separation between clusters, softer inside each orbit
+      return -clamp(orbit * 0.55, 60, 320);
+    });
 
-  // Containment — keep nodes in their angular + radial zone
-  const containmentForce = () => {
-    nodes.forEach((d: any) => {
-      if (!d.parent) return;
-      const [zoneStart, zoneEnd] = zoneMap.get(d.id) || [0, 2 * Math.PI];
-      const centerAngle = angleMap.get(d.id) ?? (zoneStart + zoneEnd) / 2;
-      const targetRadius = getOrbitRadius(d.depth);
-      const parent = d.parent;
-      const px = parent.x;
-      const py = parent.y;
-      const targetX = px + targetRadius * Math.cos(centerAngle);
-      const targetY = py + targetRadius * Math.sin(centerAngle);
+  const collisionForce = d3
+    .forceCollide()
+    .radius(node => getRadiusByDepth(node.depth || 1) + 16)
+    .strength(0.9)
+    .iterations(2);
 
-      // attraction
-      const k = 0.08;
-      d.vx += (targetX - d.x) * k;
-      d.vy += (targetY - d.y) * k;
+  const orbitalForce = () => {
+    nodes.forEach(node => {
+      const id = getNodeId(node);
+      const layoutInfo = layout.get(id);
+      if (!layoutInfo) return;
 
-      // radial boundary: prevent orbits crossing
-      const dx = d.x - parent.x;
-      const dy = d.y - parent.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = getOrbitRadius(d.depth) * 0.8;
-      if (dist < minDist) {
-        d.vx += (dx / dist) * 0.05;
-        d.vy += (dy / dist) * 0.05;
+      const k = 0.18;
+      node.vx += (layoutInfo.targetX - (node.x ?? 0)) * k;
+      node.vy += (layoutInfo.targetY - (node.y ?? 0)) * k;
+
+      if (node.parent) {
+        const parentId = getNodeId(node.parent);
+        const parentLayout = layout.get(parentId);
+        const desiredRadius = layoutInfo.orbitRadius || 0;
+        if (parentLayout && desiredRadius > 0) {
+          const dx = (node.x ?? 0) - parentLayout.targetX;
+          const dy = (node.y ?? 0) - parentLayout.targetY;
+          const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+          const delta = distance - desiredRadius;
+          const radialStrength = 0.22;
+          node.vx -= ((dx / distance) * delta) * radialStrength;
+          node.vy -= ((dy / distance) * delta) * radialStrength;
+        }
       }
     });
   };
+  (orbitalForce as any).initialize = () => {};
 
-  simulation.on('tick', containmentForce);
-  return simulation;
+  const centerForce = d3.forceCenter(0, 0);
+
+  return d3
+    .forceSimulation(nodes)
+    .force('link', linkForce)
+    .force('charge', chargeForce)
+    .force('collision', collisionForce)
+    .force('center', centerForce)
+    .force('orbital', orbitalForce)
+    .alpha(0.95)
+    .alphaDecay(0.05);
 }

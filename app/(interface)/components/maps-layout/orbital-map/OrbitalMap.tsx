@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { buildHierarchy, getVisibleNodesAndLinks } from './dataUtils';
 import { drag } from './renderUtils';
-import { createSimulation } from './physics';
+import { createSimulation, OrbitLayout, OrbitLayoutInfo } from './physics';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
 
@@ -12,6 +12,77 @@ interface OrbitalMapProps {
   folders: FolderItem[];
   colorPaletteId?: string;
 }
+
+interface OrbitRing {
+  id: string;
+  node: any;
+}
+
+const BASE_ORBIT_RADIUS = 150;
+const LEVEL_SPACING = 110;
+const EXPANSION_MULTIPLIER = 1.18;
+const ANGLE_OFFSET = -Math.PI / 2;
+
+const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
+  const layout: OrbitLayout = new Map<string, OrbitLayoutInfo>();
+  const rings: OrbitRing[] = [];
+
+  const getId = (node: any) => node.data?.name ?? node.id;
+
+  const assignPositions = (node: any, x: number, y: number) => {
+    const nodeId = getId(node);
+    const existing = layout.get(nodeId);
+    layout.set(nodeId, {
+      targetX: x,
+      targetY: y,
+      orbitRadius: existing?.orbitRadius ?? (node.parent ? layout.get(getId(node.parent))?.childOrbitRadius ?? 0 : 0),
+      angle: existing?.angle,
+      childOrbitRadius: existing?.childOrbitRadius,
+    });
+
+    const children = nodes.filter(n => n.parent === node);
+    if (!children.length) return;
+
+    const depth = node.depth || 0;
+    const childCount = children.length;
+    let orbitRadius = BASE_ORBIT_RADIUS + depth * LEVEL_SPACING;
+    if (expanded.has(nodeId) || depth === 0) {
+      orbitRadius *= EXPANSION_MULTIPLIER;
+    }
+    orbitRadius += Math.min(90, childCount * 14);
+
+    rings.push({ id: nodeId, node });
+
+    const angleStep = (2 * Math.PI) / childCount;
+    children.forEach((child, index) => {
+      const angle = ANGLE_OFFSET + index * angleStep;
+      const childId = getId(child);
+      const childX = x + Math.cos(angle) * orbitRadius;
+      const childY = y + Math.sin(angle) * orbitRadius;
+
+      layout.set(childId, {
+        targetX: childX,
+        targetY: childY,
+        orbitRadius,
+        angle,
+      });
+
+      assignPositions(child, childX, childY);
+    });
+
+    const nodeLayout = layout.get(nodeId);
+    if (nodeLayout) {
+      nodeLayout.childOrbitRadius = orbitRadius;
+    }
+  };
+
+  const root = nodes.find(n => !n.parent);
+  if (root) {
+    assignPositions(root, 0, 0);
+  }
+
+  return { layout, rings };
+};
 
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -45,6 +116,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const root = buildHierarchy(folders);
     const { visibleNodes, visibleLinks } = getVisibleNodesAndLinks(root, expanded);
 
+    const { layout: orbitLayout, rings } = computeOrbitLayout(visibleNodes, expanded);
+
     svg
       .attr('viewBox', [-width / 2, -height / 2, width, height])
       .attr('width', width)
@@ -58,20 +131,27 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const g = svg.append('g');
     svg.call(d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 3]).on('zoom', e => g.attr('transform', e.transform)));
 
-    const orbitRadiusStep = 220;
-    const maxDepth = d3.max(visibleNodes, d => d.depth) || 1;
-
     const orbitGroup = g.append('g').attr('class', 'orbits');
-    for (let depth = 1; depth <= maxDepth; depth++) {
-      orbitGroup
-        .append('circle')
-        .attr('r', orbitRadiusStep * depth)
-        .attr('fill', 'none')
-        .attr('stroke', 'rgba(180,180,180,0.08)')
-        .attr('stroke-dasharray', '4,4');
-    }
+    const orbit = orbitGroup
+      .selectAll('circle')
+      .data(rings, d => d.id)
+      .join(enter =>
+        enter
+          .append('circle')
+          .attr('fill', 'none')
+          .attr('stroke', 'rgba(180,180,180,0.18)')
+          .attr('stroke-dasharray', '6,6')
+          .attr('stroke-width', 1.4)
+          .attr('opacity', 0)
+          .call(sel =>
+            sel
+              .transition()
+              .duration(300)
+              .attr('opacity', 1),
+          ),
+      );
 
-    const simulation = createSimulation(visibleNodes, visibleLinks, orbitRadiusStep);
+    const simulation = createSimulation(visibleNodes, visibleLinks, orbitLayout);
 
     const link = g
       .append('g')
@@ -100,6 +180,14 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
         .attr('x2', d => (d.target as any).x)
         .attr('y2', d => (d.target as any).y);
       node.attr('transform', d => `translate(${d.x},${d.y})`);
+
+      orbit
+        .attr('cx', d => (d.node as any).x)
+        .attr('cy', d => (d.node as any).y)
+        .attr('r', d => {
+          const layoutInfo = orbitLayout.get(d.id);
+          return layoutInfo?.childOrbitRadius ?? 0;
+        });
     });
 
     return () => simulation.stop();
