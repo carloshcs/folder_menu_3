@@ -17,7 +17,7 @@ export function GridOverlay({ thickness, visible, darkMode }: GridOverlayProps) 
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none z-0 transition-opacity duration-300"
+      className="absolute inset-0 pointer-events-none -z-10 transition-opacity duration-300"
       style={{
         backgroundImage: `
           linear-gradient(to right, ${color} 1px, transparent 1px),

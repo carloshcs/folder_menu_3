@@ -359,12 +359,13 @@ export default function App() {
 
 
   // Handle scroll wheel zoom with cursor focus
-  const handleWheel = useCallback((event: React.WheelEvent) => {
+  const handleWheel = useCallback((event: WheelEvent) => {
     event.preventDefault();
 
-    if (!mapRef.current) return;
+    const mapElement = mapRef.current;
+    if (!mapElement) return;
 
-    const rect = mapRef.current.getBoundingClientRect();
+    const rect = mapElement.getBoundingClientRect();
     const cursorX = event.clientX - rect.left - SIDEBAR_OFFSET;
     const cursorY = event.clientY - rect.top;
 
@@ -392,6 +393,17 @@ export default function App() {
       return nextZoom;
     });
   }, []);
+
+  useEffect(() => {
+    const mapElement = mapRef.current;
+    if (!mapElement) return;
+
+    mapElement.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      mapElement.removeEventListener('wheel', handleWheel);
+    };
+  }, [handleWheel]);
 
   // Handle drag functionality - only right-click to avoid conflicts with text box resizing
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -620,7 +632,6 @@ export default function App() {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()} // Disable context menu on right-click
       >
         {/* Map Content Container */}
