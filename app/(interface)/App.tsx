@@ -9,6 +9,7 @@ import { TextToolbar } from "./components/TextToolbar";
 import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
 import { BubbleSizeMap, OrbitalMap } from "./components/maps-layout";
+import { GridOverlay } from "./components/GridOverlay";
 import { BoxType } from "@/lib/mapTypes";
 import { FolderItem } from "./components/right-sidebar/data";
 
@@ -504,50 +505,6 @@ export default function App() {
     selectedTextId,
   ]);
 
-  const gridOverlay = useMemo(() => {
-    if (!showGrid || gridThickness <= 0) {
-      return null;
-    }
-
-    const baseGridSize = 50;
-    const zoomFactor = zoom / 100;
-    let gridSize = baseGridSize;
-    let gridOpacity = 0.3;
-
-    if (zoomFactor > 4) {
-      gridSize = baseGridSize / 4;
-      gridOpacity = 0.2;
-    } else if (zoomFactor > 2) {
-      gridSize = baseGridSize / 2;
-      gridOpacity = 0.25;
-    } else if (zoomFactor < 0.3) {
-      gridSize = baseGridSize * 4;
-      gridOpacity = 0.4;
-    } else if (zoomFactor < 0.7) {
-      gridSize = baseGridSize * 2;
-      gridOpacity = 0.35;
-    }
-
-    return (
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: "-50000px",
-          top: "-50000px",
-          width: "100000px",
-          height: "100000px",
-          opacity: gridOpacity,
-          backgroundImage: `
-            linear-gradient(to right, var(--border) ${gridThickness}px, transparent ${gridThickness}px),
-            linear-gradient(to bottom, var(--border) ${gridThickness}px, transparent ${gridThickness}px)
-          `,
-          backgroundSize: `${gridSize}px ${gridSize}px`,
-          backgroundPosition: "0px 0px",
-        }}
-      />
-    );
-  }, [gridThickness, showGrid, zoom]);
-
   const textToolbar = useMemo(() => {
     if (selectedLayout === 'bubble-size' || !selectedTextId || isTextDragging || isCommentDragging) {
       return null;
@@ -622,7 +579,7 @@ export default function App() {
       <div
         ref={mapRef}
         className={`fixed inset-0 overflow-hidden ${
-          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" : 
+          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" :
           isDragging ? "cursor-grabbing" : "cursor-default"
         }`}
         style={{
@@ -634,67 +591,73 @@ export default function App() {
         onMouseUp={handleMouseUp}
         onContextMenu={(e) => e.preventDefault()} // Disable context menu on right-click
       >
-        {/* Map Content Container */}
-        <div
-          className="relative"
-          style={{
-            width: "100%",
-            height: "100%",
-            transform: `translate(${mapPosition.x}px, ${mapPosition.y}px) scale(${zoom / 100})`,
-            transformOrigin: "0 0",
-          }}
-        >
-          {gridOverlay}
+        <div className="relative w-full h-full">
+          <GridOverlay
+            zoom={zoom}
+            camera={mapPosition}
+            thickness={gridThickness}
+            visible={showGrid}
+            darkMode={isDark}
+          />
 
+          <div
+            className="absolute inset-0"
+            style={{
+              transform: `translate(${mapPosition.x}px, ${mapPosition.y}px) scale(${zoom / 100})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            <div className="relative w-full h-full">
+              {selectedLayout === 'bubble-size' ? (
+                <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              ) : selectedLayout === 'orbital' ? (
+                <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              ) : (
+                <>
+                  {/* Text Elements */}
+                  {textElements.map(textElement => (
+                    <TextBox
+                      key={textElement.id}
+                      id={textElement.id}
+                      x={textElement.x}
+                      y={textElement.y}
+                      text={textElement.text}
+                      format={textElement.format}
+                      isSelected={selectedTextId === textElement.id}
+                      zoom={zoom}
+                      onTextChange={handleTextChange}
+                      onPositionChange={handleTextPositionChange}
+                      onFormatChange={handleTextFormatChange}
+                      onSelect={handleTextSelect}
+                      onDragStart={handleTextDragStart}
+                      onDragEnd={handleTextDragEnd}
+                    />
+                  ))}
 
-            {selectedLayout === 'bubble-size' ? (
-              <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
-            ) : selectedLayout === 'orbital' ? (
-              <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
-            ) : (
-              <>
-                {/* Text Elements */}
-              {textElements.map((textElement) => (
-                <TextBox
-                  key={textElement.id}
-                  id={textElement.id}
-                  x={textElement.x}
-                  y={textElement.y}
-                  text={textElement.text}
-                  format={textElement.format}
-                  isSelected={selectedTextId === textElement.id}
-                  zoom={zoom}
-                  onTextChange={handleTextChange}
-                  onPositionChange={handleTextPositionChange}
-                  onFormatChange={handleTextFormatChange}
-                  onSelect={handleTextSelect}
-                  onDragStart={handleTextDragStart}
-                  onDragEnd={handleTextDragEnd}
-                />
-              ))}
-
-              {/* Comment Elements */}
-              {commentElements.map((commentElement) => (
-                <CommentBox
-                  key={commentElement.id}
-                  id={commentElement.id}
-                  x={commentElement.x}
-                  y={commentElement.y}
-                  comments={commentElement.comments}
-                  isSelected={selectedCommentId === commentElement.id}
-                  isExpanded={commentElement.isExpanded}
-                  zoom={zoom}
-                  onPositionChange={handleCommentPositionChange}
-                  onSelect={handleCommentSelect}
-                  onToggleExpand={handleCommentToggleExpand}
-                  onAddComment={handleCommentAdd}
-                  onDelete={handleCommentDelete}
-                  onDragStart={handleCommentDragStart}
-                  onDragEnd={handleCommentDragEnd}
-                />
-              ))}
-            </>
-          )}
+                  {/* Comment Elements */}
+                  {commentElements.map(commentElement => (
+                    <CommentBox
+                      key={commentElement.id}
+                      id={commentElement.id}
+                      x={commentElement.x}
+                      y={commentElement.y}
+                      comments={commentElement.comments}
+                      isSelected={selectedCommentId === commentElement.id}
+                      isExpanded={commentElement.isExpanded}
+                      zoom={zoom}
+                      onPositionChange={handleCommentPositionChange}
+                      onSelect={handleCommentSelect}
+                      onToggleExpand={handleCommentToggleExpand}
+                      onAddComment={handleCommentAdd}
+                      onDelete={handleCommentDelete}
+                      onDragStart={handleCommentDragStart}
+                      onDragEnd={handleCommentDragEnd}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
