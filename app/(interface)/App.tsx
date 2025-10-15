@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  CSSProperties,
+} from "react";
 import { Sidebar } from "./components/Sidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { TopNavigation } from "./components/TopNavigation";
@@ -30,8 +37,8 @@ interface CommentElement {
 }
 
 const SIDEBAR_OFFSET = 64;
-const ZOOM_MIN = 25;
-const ZOOM_MAX = 300;
+const ZOOM_MIN = 5;
+const ZOOM_MAX = 1000;
 const ZOOM_BUTTON_STEP = 25;
 const ZOOM_WHEEL_STEP = 10;
 
@@ -359,7 +366,7 @@ export default function App() {
 
 
   // Handle scroll wheel zoom with cursor focus
-  const handleWheel = useCallback((event: React.WheelEvent) => {
+  const handleWheel = useCallback((event: WheelEvent) => {
     event.preventDefault();
 
     if (!mapRef.current) return;
@@ -392,6 +399,20 @@ export default function App() {
       return nextZoom;
     });
   }, []);
+
+  useEffect(() => {
+    const element = mapRef.current;
+    if (!element) {
+      return;
+    }
+
+    const wheelListener = (event: WheelEvent) => handleWheel(event);
+    element.addEventListener("wheel", wheelListener, { passive: false });
+
+    return () => {
+      element.removeEventListener("wheel", wheelListener);
+    };
+  }, [handleWheel]);
 
   // Handle drag functionality - only right-click to avoid conflicts with text box resizing
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -492,9 +513,9 @@ export default function App() {
     selectedTextId,
   ]);
 
-  const gridOverlay = useMemo(() => {
+  const gridBackgroundStyle = useMemo<CSSProperties>(() => {
     if (!showGrid || gridThickness <= 0) {
-      return null;
+      return {};
     }
 
     const baseGridSize = 50;
@@ -516,24 +537,16 @@ export default function App() {
       gridOpacity = 0.35;
     }
 
-    return (
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: "-50000px",
-          top: "-50000px",
-          width: "100000px",
-          height: "100000px",
-          opacity: gridOpacity,
-          backgroundImage: `
-            linear-gradient(to right, var(--border) ${gridThickness}px, transparent ${gridThickness}px),
-            linear-gradient(to bottom, var(--border) ${gridThickness}px, transparent ${gridThickness}px)
-          `,
-          backgroundSize: `${gridSize}px ${gridSize}px`,
-          backgroundPosition: "0px 0px",
-        }}
-      />
-    );
+    const gridColor = `hsl(var(--border) / ${gridOpacity})`;
+
+    return {
+      backgroundImage: `
+        linear-gradient(to right, ${gridColor} ${gridThickness}px, transparent ${gridThickness}px),
+        linear-gradient(to bottom, ${gridColor} ${gridThickness}px, transparent ${gridThickness}px)
+      `,
+      backgroundSize: `${gridSize}px ${gridSize}px`,
+      backgroundPosition: "0px 0px",
+    };
   }, [gridThickness, showGrid, zoom]);
 
   const textToolbar = useMemo(() => {
@@ -610,17 +623,17 @@ export default function App() {
       <div
         ref={mapRef}
         className={`fixed inset-0 overflow-hidden ${
-          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" : 
+          isTextMode || isBoxMode || isCommentMode ? "cursor-crosshair" :
           isDragging ? "cursor-grabbing" : "cursor-default"
         }`}
         style={{
           paddingLeft: `${SIDEBAR_OFFSET}px`, // Left sidebar width (48px + 16px margin)
           paddingRight: `${SIDEBAR_OFFSET}px`, // Right sidebar width (48px + 16px margin)
+          touchAction: "none",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()} // Disable context menu on right-click
       >
         {/* Map Content Container */}
@@ -631,59 +644,63 @@ export default function App() {
             height: "100%",
             transform: `translate(${mapPosition.x}px, ${mapPosition.y}px) scale(${zoom / 100})`,
             transformOrigin: "0 0",
+            ...gridBackgroundStyle,
           }}
         >
-          {gridOverlay}
-
-
+          <div className="relative z-[1] w-full h-full">
             {selectedLayout === 'bubble-size' ? (
-              <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              <div className="absolute inset-0">
+                <BubbleSizeMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              </div>
             ) : selectedLayout === 'orbital' ? (
-              <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              <div className="absolute inset-0">
+                <OrbitalMap folders={folderData} colorPaletteId={selectedPaletteId} />
+              </div>
             ) : (
               <>
                 {/* Text Elements */}
-              {textElements.map((textElement) => (
-                <TextBox
-                  key={textElement.id}
-                  id={textElement.id}
-                  x={textElement.x}
-                  y={textElement.y}
-                  text={textElement.text}
-                  format={textElement.format}
-                  isSelected={selectedTextId === textElement.id}
-                  zoom={zoom}
-                  onTextChange={handleTextChange}
-                  onPositionChange={handleTextPositionChange}
-                  onFormatChange={handleTextFormatChange}
-                  onSelect={handleTextSelect}
-                  onDragStart={handleTextDragStart}
-                  onDragEnd={handleTextDragEnd}
-                />
-              ))}
+                {textElements.map((textElement) => (
+                  <TextBox
+                    key={textElement.id}
+                    id={textElement.id}
+                    x={textElement.x}
+                    y={textElement.y}
+                    text={textElement.text}
+                    format={textElement.format}
+                    isSelected={selectedTextId === textElement.id}
+                    zoom={zoom}
+                    onTextChange={handleTextChange}
+                    onPositionChange={handleTextPositionChange}
+                    onFormatChange={handleTextFormatChange}
+                    onSelect={handleTextSelect}
+                    onDragStart={handleTextDragStart}
+                    onDragEnd={handleTextDragEnd}
+                  />
+                ))}
 
-              {/* Comment Elements */}
-              {commentElements.map((commentElement) => (
-                <CommentBox
-                  key={commentElement.id}
-                  id={commentElement.id}
-                  x={commentElement.x}
-                  y={commentElement.y}
-                  comments={commentElement.comments}
-                  isSelected={selectedCommentId === commentElement.id}
-                  isExpanded={commentElement.isExpanded}
-                  zoom={zoom}
-                  onPositionChange={handleCommentPositionChange}
-                  onSelect={handleCommentSelect}
-                  onToggleExpand={handleCommentToggleExpand}
-                  onAddComment={handleCommentAdd}
-                  onDelete={handleCommentDelete}
-                  onDragStart={handleCommentDragStart}
-                  onDragEnd={handleCommentDragEnd}
-                />
-              ))}
-            </>
-          )}
+                {/* Comment Elements */}
+                {commentElements.map((commentElement) => (
+                  <CommentBox
+                    key={commentElement.id}
+                    id={commentElement.id}
+                    x={commentElement.x}
+                    y={commentElement.y}
+                    comments={commentElement.comments}
+                    isSelected={selectedCommentId === commentElement.id}
+                    isExpanded={commentElement.isExpanded}
+                    zoom={zoom}
+                    onPositionChange={handleCommentPositionChange}
+                    onSelect={handleCommentSelect}
+                    onToggleExpand={handleCommentToggleExpand}
+                    onAddComment={handleCommentAdd}
+                    onDelete={handleCommentDelete}
+                    onDragStart={handleCommentDragStart}
+                    onDragEnd={handleCommentDragEnd}
+                  />
+                ))}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
