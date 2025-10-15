@@ -47,7 +47,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
 
     svg
       .attr('viewBox', [-width / 2, -height / 2, width, height])
-      .attr('style', 'width:100%; height:100%; background:none; display:block;')
+      .attr('style', 'max-width:100%; height:auto; background:none;')
       .on('dblclick.zoom', null);
 
     const g = svg.append('g');
