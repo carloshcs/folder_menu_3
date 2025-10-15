@@ -4,9 +4,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { buildHierarchy, getVisibleNodesAndLinks } from './dataUtils';
 import { drag } from './renderUtils';
-import { createSimulation, OrbitLayout, OrbitLayoutInfo } from './physics';
+import { createSimulation, OrbitLayout, OrbitLayoutInfo, getNodeId } from './physics';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
+import { handleNodeDoubleClick, type ExpandableNodeLike } from '@/app/(interface)/lib/mapUtils/interactions';
 
 type D3GroupSelection = d3.Selection<SVGGElement, unknown, null, undefined>;
 

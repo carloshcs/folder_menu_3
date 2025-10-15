@@ -1,5 +1,6 @@
 import type { FolderItem } from '../../right-sidebar/data';
 import * as d3 from 'd3';
+import { getExpandableNodeId } from '@/app/(interface)/lib/mapUtils/interactions';
 
 interface HierarchyFolder {
   id: string;
