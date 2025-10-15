@@ -3,11 +3,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { buildHierarchy, getVisibleNodesAndLinks } from './dataUtils';
-import { drag } from './renderUtils';
-import { createSimulation, OrbitLayout, OrbitLayoutInfo, getNodeId } from './physics';
 import { renderNodes } from './renderNodes';
 import type { FolderItem } from '../../right-sidebar/data';
-import { handleNodeDoubleClick, type ExpandableNodeLike } from '@/app/(interface)/lib/mapUtils/interactions';
+import { handleNodeDoubleClick } from '@/app/(interface)/lib/mapUtils/interactions';
 
 type D3GroupSelection = d3.Selection<SVGGElement, unknown, null, undefined>;
 
@@ -28,6 +26,16 @@ const ANGLE_OFFSET = -Math.PI / 2;
 
 const getNodeKey = (node: any) =>
   node.data?.path ?? node.data?.id ?? node.data?.name ?? node.id;
+
+interface OrbitLayoutInfo {
+  targetX: number;
+  targetY: number;
+  orbitRadius: number;
+  angle?: number;
+  childOrbitRadius?: number;
+}
+
+type OrbitLayout = Map<string, OrbitLayoutInfo>;
 
 const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   const layout: OrbitLayout = new Map<string, OrbitLayoutInfo>();
@@ -90,19 +98,6 @@ const computeOrbitLayout = (nodes: any[], expanded: Set<string>) => {
   return { layout, rings };
 };
 
-const collapseDescendants = (node: any, expanded: Set<string>) => {
-  if (!node) return;
-  node
-    .descendants()
-    .filter(descendant => descendant !== node)
-    .forEach(descendant => {
-      const key = getNodeKey(descendant);
-      if (key) {
-        expanded.delete(key);
-      }
-    });
-};
-
 export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -112,7 +107,8 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   const orbitLayerRef = useRef<D3GroupSelection | null>(null);
   const linkLayerRef = useRef<D3GroupSelection | null>(null);
   const nodeLayerRef = useRef<D3GroupSelection | null>(null);
-  const simulationRef = useRef<d3.Simulation<any, undefined> | null>(null);
+  const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const layoutRef = useRef<OrbitLayout>(new Map());
 
   // Resize observer
   useEffect(() => {
@@ -163,13 +159,7 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
   }, []);
 
   useEffect(() => {
-    if (
-      !svgRef.current ||
-      !gRef.current ||
-      !orbitLayerRef.current ||
-      !linkLayerRef.current ||
-      !nodeLayerRef.current
-    ) {
+    if (!svgRef.current || !gRef.current || !orbitLayerRef.current || !linkLayerRef.current || !nodeLayerRef.current) {
       return;
     }
 
@@ -181,6 +171,44 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
     const { visibleNodes, visibleLinks } = getVisibleNodesAndLinks(root, expanded);
 
     const { layout: orbitLayout, rings } = computeOrbitLayout(visibleNodes, expanded);
+
+    const previousPositions = positionsRef.current;
+    const nextPositions = new Map<string, { x: number; y: number }>();
+    const previousLayout = layoutRef.current;
+
+    visibleNodes.forEach(node => {
+      const nodeKey = getNodeKey(node);
+      if (!nodeKey) return;
+      const layoutInfo = orbitLayout.get(nodeKey);
+      if (!layoutInfo) return;
+
+      const previousPosition = previousPositions.get(nodeKey);
+      let startX = previousPosition?.x;
+      let startY = previousPosition?.y;
+
+      if (startX === undefined || startY === undefined) {
+        const parent = node.parent;
+        if (parent) {
+          const parentKey = getNodeKey(parent);
+          const parentPrev = parentKey ? previousPositions.get(parentKey) : undefined;
+          const parentLayout = parentKey ? orbitLayout.get(parentKey) : undefined;
+          startX = parentPrev?.x ?? parentLayout?.targetX ?? layoutInfo.targetX;
+          startY = parentPrev?.y ?? parentLayout?.targetY ?? layoutInfo.targetY;
+        } else {
+          startX = layoutInfo.targetX;
+          startY = layoutInfo.targetY;
+        }
+      }
+
+      node.x = startX;
+      node.y = startY;
+      (node as any).targetX = layoutInfo.targetX;
+      (node as any).targetY = layoutInfo.targetY;
+
+      nextPositions.set(nodeKey, { x: layoutInfo.targetX, y: layoutInfo.targetY });
+    });
+
+    positionsRef.current = nextPositions;
 
     svg
       .attr('viewBox', [-width / 2, -height / 2, width, height])
@@ -223,11 +251,17 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
               .attr('opacity', 0)
               .remove(),
           ),
+      )
+      .attr('cx', d => ((d.node as any).x as number) ?? 0)
+      .attr('cy', d => ((d.node as any).y as number) ?? 0)
+      .attr(
+        'r',
+        d => previousLayout.get(d.id)?.childOrbitRadius ?? orbitLayout.get(d.id)?.childOrbitRadius ?? 0,
       );
 
     const link = linkLayer
       .selectAll<SVGLineElement, any>('line')
-      .data(visibleLinks, d => `${(d.source as any).data?.name ?? (d.source as any).id}-${(d.target as any).data?.name ?? (d.target as any).id}`)
+      .data(visibleLinks, d => `${getNodeKey(d.source)}-${getNodeKey(d.target)}`)
       .join(
         enter =>
           enter
@@ -235,60 +269,57 @@ export const OrbitalMap: React.FC<OrbitalMapProps> = ({ folders, colorPaletteId 
             .attr('stroke', 'rgba(200,200,200,0.25)')
             .attr('stroke-width', 1.2),
         update => update,
-        exit => exit.remove(),
-      );
+        exit =>
+          exit.call(sel =>
+            sel
+              .transition()
+              .duration(200)
+              .style('opacity', 0)
+              .remove(),
+          ),
+      )
+      .attr('x1', d => ((d.source as any).x as number) ?? 0)
+      .attr('y1', d => ((d.source as any).y as number) ?? 0)
+      .attr('x2', d => ((d.target as any).x as number) ?? 0)
+      .attr('y2', d => ((d.target as any).y as number) ?? 0);
 
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
-    const simulation = createSimulation(visibleNodes, visibleLinks, orbitLayout);
-    simulationRef.current = simulation;
-
-    const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId).call(drag(simulation) as any);
+    const node = renderNodes(svg, nodeLayer, visibleNodes, colorPaletteId);
 
     node.on('dblclick', function (event, d) {
       event.preventDefault();
       event.stopPropagation();
-      if ((d.data?.children && d.data.children.length > 0) || (d.children && d.children.length > 0)) {
-        setExpanded(prev => {
-          const next = new Set(prev);
-          const nodeKey = getNodeKey(d);
-          if (!nodeKey) return next;
-          if (next.has(nodeKey)) {
-            next.delete(nodeKey);
-            collapseDescendants(d, next);
-          } else {
-            next.add(nodeKey);
-          }
-          return next;
-        });
+      const hasChildren = (d.children && d.children.length > 0) || (d.data?.children && d.data.children.length > 0);
+      if (!hasChildren) {
+        return;
       }
 
-      toggleNodeExpansion(d, setExpanded);
+      handleNodeDoubleClick(d, setExpanded);
     });
 
-    simulation.on('tick', () => {
-      link
-        .attr('x1', d => (d.source as any).x)
-        .attr('y1', d => (d.source as any).y)
-        .attr('x2', d => (d.target as any).x)
-        .attr('y2', d => (d.target as any).y);
-      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    const transition = svg.transition().duration(450).ease(d3.easeCubicInOut);
 
-      orbit
-        .attr('cx', d => (d.node as any).x)
-        .attr('cy', d => (d.node as any).y)
-        .attr('r', d => {
-          const layoutInfo = orbitLayout.get(d.id);
-          return layoutInfo?.childOrbitRadius ?? 0;
-        });
-    });
+    node
+      .transition(transition)
+      .attr('transform', d => `translate(${(d as any).targetX ?? d.x ?? 0},${(d as any).targetY ?? d.y ?? 0})`)
+      .on('end', function (_, d) {
+        d.x = (d as any).targetX;
+        d.y = (d as any).targetY;
+      });
 
-    simulation.alpha(1).restart();
+    link
+      .transition(transition)
+      .attr('x1', d => ((d.source as any).targetX as number) ?? ((d.source as any).x as number) ?? 0)
+      .attr('y1', d => ((d.source as any).targetY as number) ?? ((d.source as any).y as number) ?? 0)
+      .attr('x2', d => ((d.target as any).targetX as number) ?? ((d.target as any).x as number) ?? 0)
+      .attr('y2', d => ((d.target as any).targetY as number) ?? ((d.target as any).y as number) ?? 0);
 
-    return () => {
-      simulation.stop();
-    };
+    orbit
+      .transition(transition)
+      .attr('cx', d => ((d.node as any).targetX as number) ?? ((d.node as any).x as number) ?? 0)
+      .attr('cy', d => ((d.node as any).targetY as number) ?? ((d.node as any).y as number) ?? 0)
+      .attr('r', d => orbitLayout.get(d.id)?.childOrbitRadius ?? 0);
+
+    layoutRef.current = orbitLayout;
   }, [folders, size, colorPaletteId, expanded]);
 
   return (

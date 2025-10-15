@@ -1,7 +1,7 @@
 import * as d3 from 'd3';
 import { getFontSizeForRadius, getRadiusByDepth } from './renderUtils';
 import { getPaletteColor, getReadableTextColor, shiftColor } from '@/app/(interface)/lib/utils/colors';
-import { getNodeId } from './physics';
+import { getNodeId } from './nodeId';
 
 const LOGO_MAP: Record<string, string> = {
   'Folder Fox': '/assets/folder-fox.png',
