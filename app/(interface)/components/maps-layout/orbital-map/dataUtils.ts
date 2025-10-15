@@ -45,7 +45,7 @@ export function getVisibleNodesAndLinks(root: d3.HierarchyNode<any>, expanded: S
     if (d.depth <= 1) return true; // root + integrations
     const parent = d.parent;
     if (!parent) return false;
-    const parentKey = getExpandableNodeId(parent as any);
+    const parentKey = parent.data?.path ?? parent.data?.id ?? parent.data?.name;
     if (!parentKey) return false;
     return expanded.has(parentKey);
   });

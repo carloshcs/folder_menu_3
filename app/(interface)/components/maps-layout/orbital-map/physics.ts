@@ -17,9 +17,17 @@ const clamp = (value: number, min: number, max: number) =>
 
 /** Exported so other modules can reuse it */
 export function getNodeId(node: any): string {
-  const derivedId = getExpandableNodeId(node);
-  if (derivedId) {
-    return derivedId;
+  if (node.id !== undefined && node.id !== null) {
+    return String(node.id);
+  }
+  if (node.data?.path) {
+    return String(node.data.path);
+  }
+  if (node.data?.id) {
+    return String(node.data.id);
+  }
+  if (node.data?.name) {
+    return String(node.data.name);
   }
   return Math.random().toString(36).slice(2);
 }
