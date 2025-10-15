@@ -530,7 +530,7 @@ export default function App() {
 
     return (
       <div
-        className="absolute pointer-events-none"
+        className="absolute pointer-events-none -z-10"
         style={{
           left: "-50000px",
           top: "-50000px",
