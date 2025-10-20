@@ -10,6 +10,7 @@ import { TextFormat } from "./components/TextFormatDialog";
 import { CommentBox, Comment } from "./components/CommentBox";
 import { BubbleSizeMap, OrbitalMap } from "./components/maps-layout";
 import { GridOverlay } from "./components/GridOverlay";
+import { ResultsPanel } from "./components/results/ResultsPanel";
 import { BoxType } from "@/lib/mapTypes";
 import { FolderItem } from "./components/right-sidebar/data";
 
@@ -69,6 +70,7 @@ export default function App() {
   const [existingMaps, setExistingMaps] = useState(['My Project Map', 'Team Workspace', 'Design System', 'Marketing Campaign']);
   const [selectedLayout, setSelectedLayout] = useState<string | null>('orbital');
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>("blue");
+  const [showResultsPanel, setShowResultsPanel] = useState(true);
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Check for saved theme preference or default to light mode
@@ -698,6 +700,13 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {showResultsPanel && (
+        <ResultsPanel
+          className="fixed bottom-6 left-1/2 z-30 w-full -translate-x-1/2 px-4 sm:px-0"
+          onClose={() => setShowResultsPanel(false)}
+        />
+      )}
 
       {/* Text Toolbar - only show when text is selected and not dragging */}
       {textToolbar}
